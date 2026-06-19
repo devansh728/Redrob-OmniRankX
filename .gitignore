@@ -1,2 +1,8 @@
 /Docs
 /India_runs_data_and_ai_challenge
+.project_state_context.md
+__pycache__/
+.pytest_cache/
+redrob-ranker/models/
+redrob-ranker/outputs/
+*.pyc
