@@ -1,38 +1,44 @@
 import os
-import shutil
-from optimum.onnxruntime import ORTModelForFeatureExtraction, ORTQuantizer
-from optimum.onnxruntime.configuration import AutoQuantizationConfig
-from transformers import AutoTokenizer
+import torch
+from transformers import AutoTokenizer, AutoModel
+from onnxruntime.quantization import quantize_dynamic, QuantType
 
 def main():
     model_id = "BAAI/bge-small-en-v1.5"
     out_dir = os.path.join("models", "bge-small-en-v1.5-int8")
-    temp_dir = os.path.join("models", "bge-small-en-v1.5-temp")
-
     os.makedirs(out_dir, exist_ok=True)
-    os.makedirs(temp_dir, exist_ok=True)
 
     tokenizer = AutoTokenizer.from_pretrained(model_id)
     tokenizer.save_pretrained(out_dir)
 
-    model = ORTModelForFeatureExtraction.from_pretrained(model_id, export=True)
-    model.save_pretrained(temp_dir)
+    model = AutoModel.from_pretrained(model_id)
+    model.eval()
 
-    quantizer = ORTQuantizer.from_pretrained(temp_dir)
-    qconfig = AutoQuantizationConfig.avx512_vnni(is_static=False, per_channel=False)
-    quantizer.quantize(save_dir=out_dir, quantization_config=qconfig)
-
-    if os.path.exists(temp_dir):
-        shutil.rmtree(temp_dir)
-
-    orig_model_path = os.path.join(out_dir, "model.onnx")
-    if os.path.exists(orig_model_path):
-        os.remove(orig_model_path)
+    inputs = tokenizer("hello world", return_tensors="pt")
     
-    quantized_model_path = os.path.join(out_dir, "model_quantized.onnx")
-    dest_model_path = os.path.join(out_dir, "model.onnx")
-    if os.path.exists(quantized_model_path):
-        os.rename(quantized_model_path, dest_model_path)
+    onnx_path = os.path.join(out_dir, "model.onnx")
+
+    with torch.no_grad():
+        torch.onnx.export(
+            model,
+            (inputs["input_ids"], inputs["attention_mask"], inputs["token_type_ids"]),
+            onnx_path,
+            input_names=["input_ids", "attention_mask", "token_type_ids"],
+            output_names=["last_hidden_state"],
+            dynamic_axes={
+                "input_ids": {0: "batch_size", 1: "sequence_length"},
+                "attention_mask": {0: "batch_size", 1: "sequence_length"},
+                "token_type_ids": {0: "batch_size", 1: "sequence_length"},
+                "last_hidden_state": {0: "batch_size", 1: "sequence_length"}
+            },
+            opset_version=14
+        )
+
+    quantize_dynamic(
+        model_input=onnx_path,
+        model_output=onnx_path,
+        weight_type=QuantType.QUInt8
+    )
 
 if __name__ == "__main__":
     main()
