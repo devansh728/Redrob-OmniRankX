@@ -1,0 +1,44 @@
+team_name: "OmniRank-X"
+
+primary_contact:
+  name: "Your Name"
+  email: "your-email@example.com"
+  phone: "+91-XXXXXXXXXX"
+
+team_members:
+  - name: "Your Name"
+    email: "your-email@example.com"
+    role: "ML Engineer"
+
+github_repo: "https://github.com/your-username/redrob-ranker"
+
+sandbox_link: "https://huggingface.co/spaces/your-username/redrob-ranker"
+
+reproduce_command: "python main.py ../India_runs_data_and_ai_challenge/candidates.jsonl outputs/submission.csv"
+
+compute:
+  platform: "Local PC"
+  cpu_cores: 8
+  ram_gb: 16
+  python_version: "3.11.9"
+  os: "Windows"
+  uses_gpu_for_inference: false
+  has_network_during_ranking: false
+  pre_computation_required: false
+  pre_computation_time_minutes: 0
+
+ai_tools_used:
+  - "Gemini"
+
+ai_usage_summary: |
+  Used Gemini as an agentic pair-programming assistant to build, optimize, and validate the candidate discovery and ranking pipeline.
+
+methodology_summary: |
+  OmniRank-X is a deterministic, high-throughput candidate ranking pipeline consisting of a Polars stream loader, a multi-stage pruner (honeypot detection + hard disqualifiers), a semantic discovery model (ONNX INT8 BGE-small embeddings + BM25 + Reciprocal Rank Fusion), trajectory career-progression scoring, and a behavioral composite scoring engine. Computes candidate discovering, ranking, and decision-tree reasoning over 100,000 profiles on CPU in under 21 seconds.
+
+declarations:
+  read_submission_spec: true
+  code_is_original_work: true
+  no_collusion: true
+  honeypot_check_done: true
+  reproduction_tested: true
