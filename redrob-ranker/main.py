@@ -9,7 +9,7 @@ def main():
     start_time = time.time()
     
     candidates_path = sys.argv[1] if len(sys.argv) > 1 else "../India_runs_data_and_ai_challenge/candidates.jsonl"
-    output_path = sys.argv[2] if len(sys.argv) > 2 else "outputs/submission.csv"
+    output_path = sys.argv[2] if len(sys.argv) > 2 else "outputs/submission1.csv"
 
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
 
