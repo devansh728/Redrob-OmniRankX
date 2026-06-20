@@ -1,95 +1,127 @@
 import datetime
-from utils.date_utils import parse_date, REFERENCE_TODAY
-from utils.text_utils import concat_career_text
+import json
+import polars as pl
+from utils.date_utils import REFERENCE_TODAY
 
 def run(candidates, settings):
+    if isinstance(candidates, list):
+        from pipeline.loader import serialize_row
+        flat_rows = [serialize_row(c) for c in candidates]
+        lazy_df = pl.DataFrame(flat_rows).lazy()
+    else:
+        lazy_df = candidates
+
+    duration_sum = pl.col("career_history").str.json_decode(
+        pl.List(pl.Struct({"duration_months": pl.Int64}))
+    ).list.eval(pl.element().struct.field("duration_months")).list.sum().fill_null(0)
+
+    exp_years = pl.col("profile").str.json_path_match("$.years_of_experience").cast(pl.Float64).fill_null(0.0)
+    failed_check_1 = ((duration_sum - exp_years * 12).abs() > 24).fill_null(False)
+
+    job_years = pl.col("career_history").str.json_decode(
+        pl.List(pl.Struct({"start_date": pl.String}))
+    ).list.eval(pl.element().struct.field("start_date").str.slice(0, 4).cast(pl.Int64))
+    earliest_job_year = job_years.list.min()
+
+    edu_years = pl.col("education").str.json_decode(
+        pl.List(pl.Struct({"end_year": pl.Int64}))
+    ).list.eval(pl.element().struct.field("end_year"))
+    latest_edu_year = edu_years.list.max()
+
+    has_jobs_and_edu = earliest_job_year.is_not_null() & latest_edu_year.is_not_null()
+    failed_check_2 = (has_jobs_and_edu & (latest_edu_year > earliest_job_year)).fill_null(False)
+
+    github_score = pl.col("redrob_signals").str.json_path_match("$.github_activity_score").cast(pl.Float64).fill_null(-1.0)
+    last_active = pl.col("redrob_signals").str.json_path_match("$.last_active_date").str.to_date()
+    days_inactive = (pl.lit(REFERENCE_TODAY) - last_active).dt.total_days()
+    # github_activity_score reflects activity in the last 12 months per schema definition. A score of 95+ requires sustained daily commits; platform inactivity of 18+ months is a physical contradiction.
+    failed_check_3 = ((github_score >= 95.0) & (days_inactive > 18 * 30)).fill_null(False)
+
+    profile_fields = [
+        "anonymized_name", "headline", "summary", "location", 
+        "country", "current_title", "current_company", 
+        "current_company_size", "current_industry"
+    ]
+    has_empty_field = pl.col("profile").str.json_path_match("$.years_of_experience").is_null()
+    for field in profile_fields:
+        field_val = pl.col("profile").str.json_path_match(f"$.{field}")
+        has_empty_field = has_empty_field | field_val.is_null() | (field_val.str.strip_chars() == "")
+
+    failed_check_4 = ((pl.col("redrob_signals").str.json_path_match("$.profile_completeness_score").cast(pl.Float64) == 100.0) & has_empty_field).fill_null(False)
+
+    open_to_work = pl.col("redrob_signals").str.json_path_match("$.open_to_work_flag") == "true"
+    apps_submitted = pl.col("redrob_signals").str.json_path_match("$.applications_submitted_30d").cast(pl.Int64).fill_null(0)
+    failed_check_5 = (open_to_work & (apps_submitted == 0) & (days_inactive > 6 * 30)).fill_null(False)
+
+    honeypot_failures = (
+        failed_check_1.cast(pl.Int32) +
+        failed_check_2.cast(pl.Int32) +
+        failed_check_3.cast(pl.Int32) +
+        failed_check_4.cast(pl.Int32) +
+        failed_check_5.cast(pl.Int32)
+    )
+    honeypot_dropped = (honeypot_failures >= 2).fill_null(False)
+
+    is_research_or_academia = pl.col("career_history").str.json_decode(
+        pl.List(pl.Struct({"industry": pl.String}))
+    ).list.eval((pl.element().struct.field("industry") == "Research") | (pl.element().struct.field("industry") == "Academia"))
+    all_research = (is_research_or_academia.list.len() > 0) & is_research_or_academia.list.all()
+
+    deploy_langs = ["python", "java", "c\\+\\+", "rust", "\\bgo\\b", "scala", "c#", "javascript", "typescript"]
+    regex_pattern = "(?i)" + "|".join(deploy_langs)
+    has_deploy_lang = pl.col("precomputed_career_text").str.contains(regex_pattern)
+    is_pure_researcher = (all_research & (~has_deploy_lang)).fill_null(False)
+
+    cv_pattern = "(?i)" + "|".join(["vision", "image", "video", "speech", "audio", "voice", "robot", "control", "autonomous", "lidar", "sensor"])
+    has_cv = pl.col("precomputed_career_text").str.contains(cv_pattern)
+
+    nlp_pattern = "(?i)" + "|".join(["nlp", "natural language", "text", "information retrieval", "search", "retrieval", "ranking", "embedding", "vector", "llm", "language model", "transformer", "bert", "rag"])
+    has_nlp = pl.col("precomputed_career_text").str.contains(nlp_pattern)
+    is_wrong_domain = (has_cv & (~has_nlp)).fill_null(False)
+
+    country = pl.col("profile").str.json_path_match("$.country").str.to_lowercase()
+    is_outside_india = country.is_not_null() & (country != "india")
+    is_unwilling_relocate = pl.col("redrob_signals").str.json_path_match("$.willing_to_relocate") == "false"
+    outside_india_unwilling = (is_outside_india & is_unwilling_relocate).fill_null(False)
+
+    companies = pl.col("career_history").str.json_decode(
+        pl.List(pl.Struct({"company": pl.String, "industry": pl.String}))
+    )
+    is_service_entry = companies.list.eval(
+        (pl.element().struct.field("company").is_in(list(settings.SERVICES_FIRMS))) | 
+        (pl.element().struct.field("industry") == "IT Services")
+    )
+    all_services = (is_service_entry.list.len() > 0) & is_service_entry.list.all()
+
+    product_pattern = "(?i)" + "|".join(["product", "startup", "scale", "saas", "platform"])
+    has_product_lang = pl.col("precomputed_career_text").str.contains(product_pattern)
+    is_services_only = (all_services & (~has_product_lang)).fill_null(False)
+
+    keep_mask = (
+        (~honeypot_dropped) & 
+        (~is_pure_researcher) & 
+        (~is_wrong_domain) & 
+        (~outside_india_unwilling) & 
+        (~is_services_only)
+    )
+
+    pruned_df = lazy_df.filter(keep_mask).collect()
+
     pruned_candidates = []
-    
-    for candidate in candidates:
-        profile = candidate.get("profile", {})
-        career_history = candidate.get("career_history", [])
-        education = candidate.get("education", [])
-        signals = candidate.get("redrob_signals", {})
-        
-        honeypot_failures = 0
-        
-        duration_sum = sum(job.get("duration_months", 0) for job in career_history)
-        exp_years = profile.get("years_of_experience", 0)
-        if abs(duration_sum - exp_years * 12) > 24:
-            honeypot_failures += 1
+    for row in pruned_df.iter_rows(named=True):
+        candidate = {
+            "candidate_id": row["candidate_id"],
+            "precomputed_career_text": row["precomputed_career_text"]
+        }
+        for field in ["profile", "redrob_signals"]:
+            val = row.get(field)
+            candidate[field] = json.loads(val) if isinstance(val, str) else (val or {})
             
-        job_dates = [parse_date(job.get("start_date")) for job in career_history]
-        valid_job_years = [d.year for d in job_dates if d]
-        if valid_job_years and education:
-            earliest_job_year = min(valid_job_years)
-            if any(edu.get("end_year", 0) > earliest_job_year for edu in education):
-                honeypot_failures += 1
-                
-        github_score = signals.get("github_activity_score", -1)
-        last_active = parse_date(signals.get("last_active_date"))
-        if github_score >= 95 and last_active:
-            days_inactive = (REFERENCE_TODAY - last_active).days
-            # github_activity_score reflects activity in the last 12 months per schema definition. A score of 95+ requires sustained daily commits; platform inactivity of 18+ months is a physical contradiction.
-            if days_inactive > 18 * 30:
-                honeypot_failures += 1
-                
-        if signals.get("profile_completeness_score") == 100:
-            has_empty = False
-            for f in ["anonymized_name", "headline", "summary", "location", "country", "current_title", "current_company", "current_company_size", "current_industry"]:
-                if not profile.get(f):
-                    has_empty = True
-                    break
-            if profile.get("years_of_experience") is None:
-                has_empty = True
-            if has_empty:
-                honeypot_failures += 1
-                
-        if signals.get("open_to_work_flag") is True and signals.get("applications_submitted_30d", 0) == 0:
-            if last_active:
-                days_inactive = (REFERENCE_TODAY - last_active).days
-                if days_inactive > 6 * 30:
-                    honeypot_failures += 1
-                    
-        if honeypot_failures >= 2:
-            continue
+        for field in ["career_history", "education", "skills", "certifications", "languages"]:
+            val = row.get(field)
+            candidate[field] = json.loads(val) if isinstance(val, str) else (val or [])
             
-        industries = [job.get("industry", "") for job in career_history]
-        is_pure_research = False
-        if industries and all(ind in {"Research", "Academia"} for ind in industries):
-            all_text = concat_career_text(candidate).lower()
-            deploy_langs = ["python", "java", "c++", "rust", "go", "scala", "c#", "javascript", "typescript"]
-            if not any(lang in all_text for lang in deploy_langs):
-                is_pure_research = True
-        if is_pure_research:
-            continue
-            
-        all_text = concat_career_text(candidate).lower()
-        cv_keywords = ["vision", "image", "video", "speech", "audio", "voice", "robot", "control", "autonomous", "lidar", "sensor"]
-        nlp_keywords = ["nlp", "natural language", "text", "information retrieval", "search", "retrieval", "ranking", "embedding", "vector", "llm", "language model", "transformer", "bert", "rag"]
-        has_cv = any(kw in all_text for kw in cv_keywords)
-        has_nlp = any(kw in all_text for kw in nlp_keywords)
-        if has_cv and not has_nlp:
-            continue
-            
-        country = profile.get("country", "").lower()
-        willing_relocate = signals.get("willing_to_relocate")
-        if country and country != "india" and willing_relocate is False:
-            continue
-            
-        all_services = False
-        if career_history:
-            all_services = True
-            for job in career_history:
-                comp = job.get("company")
-                if comp not in settings.SERVICES_FIRMS:
-                    all_services = False
-                    break
-        if all_services:
-            product_keywords = ["product", "startup", "scale", "saas", "platform"]
-            has_product_lang = any(kw in all_text for kw in product_keywords)
-            if not has_product_lang:
-                continue
-                
         pruned_candidates.append(candidate)
-        
+
     return pruned_candidates
+

@@ -1,6 +1,7 @@
 import gzip
 import json
 import os
+import polars as pl
 
 def stream_candidates(path):
     if not os.path.exists(path):
@@ -30,5 +31,36 @@ def stream_candidates(path):
                 if line_str:
                     yield json.loads(line_str)
 
+def serialize_row(row):
+    flat_row = {"candidate_id": str(row.get("candidate_id", ""))}
+    career_list = row.get("career_history") or []
+    career_text = " ".join([
+        str(role.get("description", "")) for role in career_list 
+        if isinstance(role, dict) and role.get("description")
+    ])
+    flat_row["precomputed_career_text"] = career_text
+    
+    object_fields = ["profile", "redrob_signals"]
+    for field in object_fields:
+        flat_row[field] = json.dumps(row.get(field) or {})
+        
+    array_fields = ["career_history", "education", "skills", "certifications", "languages"]
+    for field in array_fields:
+        flat_row[field] = json.dumps(row.get(field) or [])
+        
+    return flat_row
+
 def load_all(path):
-    return list(stream_candidates(path))
+    if path.endswith(".parquet"):
+        return pl.scan_parquet(path)
+    
+    if os.path.exists("data/candidates.parquet") and "sample_candidates" not in path:
+        return pl.scan_parquet("data/candidates.parquet")
+    elif os.path.exists("redrob-ranker/data/candidates.parquet") and "sample_candidates" not in path:
+        return pl.scan_parquet("redrob-ranker/data/candidates.parquet")
+        
+    raw_rows = list(stream_candidates(path))
+    flat_rows = [serialize_row(r) for r in raw_rows]
+    df = pl.DataFrame(flat_rows)
+    return df.lazy()
+

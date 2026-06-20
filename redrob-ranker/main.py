@@ -15,7 +15,12 @@ def main():
 
     print(f"Loading candidates from {candidates_path}")
     candidates = loader.load_all(candidates_path)
-    print(f"Loaded {len(candidates)} candidates in {time.time() - start_time:.2f}s")
+    import polars as pl
+    if isinstance(candidates, pl.LazyFrame):
+        print(f"Loaded candidates LazyFrame in {time.time() - start_time:.2f}s")
+    else:
+        print(f"Loaded {len(candidates)} candidates in {time.time() - start_time:.2f}s")
+
 
     print("Running Stage 1: Pruning")
     t0 = time.time()

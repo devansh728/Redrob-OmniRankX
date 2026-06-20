@@ -7,4 +7,6 @@ redrob-ranker/models/
 redrob-ranker/outputs/
 redrob-ranker/.venv/
 *.pyc
-
+data/
+redrob-ranker/scripts/scan_parquet_file.py
+outputs/

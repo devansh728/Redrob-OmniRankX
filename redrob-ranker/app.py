@@ -12,7 +12,11 @@ def run_ranking(file_obj):
     file_path = file_obj.name
     try:
         candidates = loader.load_all(file_path)
-        total_loaded = len(candidates)
+        import polars as pl
+        if isinstance(candidates, pl.LazyFrame):
+            total_loaded = candidates.select(pl.len()).collect().item()
+        else:
+            total_loaded = len(candidates)
         
         pruned = pruner.run(candidates, settings)
         total_pruned = len(pruned)
