@@ -3,7 +3,8 @@ import csv
 import gradio as gr
 import pandas as pd
 from pipeline import loader, pruner, semantic, trajectory, behavioral, fusion
-from config import settings
+from config.config_loader import load_runtime_config
+settings = load_runtime_config()
 
 def run_ranking(file_obj):
     if not file_obj:

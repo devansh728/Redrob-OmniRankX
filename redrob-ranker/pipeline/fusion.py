@@ -44,7 +44,7 @@ def run(candidates, config):
 
     sorted_candidates = sorted(
         candidates,
-        key=lambda x: (-x["final_score"], x["candidate_id"])
+        key=lambda x: (-round(x["final_score"], 4), x["candidate_id"])
     )
 
     top_n = min(config.FINAL_TOP_N, len(sorted_candidates))

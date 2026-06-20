@@ -97,13 +97,19 @@ def run(candidates, settings):
     has_product_lang = pl.col("precomputed_career_text").str.contains(product_pattern)
     is_services_only = (all_services & (~has_product_lang)).fill_null(False)
 
+    min_exp = getattr(settings, "MIN_YEARS_EXPERIENCE", 0.0)
+    max_exp = getattr(settings, "MAX_YEARS_EXPERIENCE", 20.0)
+    failed_exp = (exp_years < min_exp) | (exp_years > max_exp)
+
     keep_mask = (
         (~honeypot_dropped) & 
+        (~failed_exp) & 
         (~is_pure_researcher) & 
         (~is_wrong_domain) & 
         (~outside_india_unwilling) & 
         (~is_services_only)
     )
+
 
     pruned_df = lazy_df.filter(keep_mask).collect()
 

@@ -44,7 +44,7 @@ def run(candidates, embedder=None, config=None):
                 max_length=512,
                 return_tensors="np"
             )
-            ort_inputs = {name: inputs[name] for name in input_names if name in inputs}
+            ort_inputs = {name: inputs[name].astype(np.int64) for name in input_names if name in inputs}
             outputs = session.run(None, ort_inputs)
             batch_embeddings = outputs[0][:, 0, :]
             norms = np.linalg.norm(batch_embeddings, axis=1, keepdims=True)
@@ -60,7 +60,7 @@ def run(candidates, embedder=None, config=None):
             max_length=512,
             return_tensors="np"
         )
-        q_ort_inputs = {name: q_inputs[name] for name in input_names if name in q_inputs}
+        q_ort_inputs = {name: q_inputs[name].astype(np.int64) for name in input_names if name in q_inputs}
         q_outputs = session.run(None, q_ort_inputs)
         q_emb = q_outputs[0][0, 0, :]
         q_norm = np.linalg.norm(q_emb)

@@ -34,3 +34,22 @@ def tokenize_for_bm25(text):
         return []
     cleaned = re.sub(r'[^\w\s]', '', text)
     return cleaned.lower().split()
+
+def extract_raw_text_from_docx(path):
+    import docx
+    doc = docx.Document(path)
+    paragraphs = [p.text for p in doc.paragraphs if p.text]
+    tables_text = []
+    for table in doc.tables:
+        for row in table.rows:
+            row_text = [cell.text.strip() for cell in row.cells if cell.text.strip()]
+            if row_text:
+                tables_text.append(" | ".join(row_text))
+    return "\n".join(paragraphs + tables_text)
+
+def extract_raw_text_from_file(path):
+    if path.lower().endswith(".docx"):
+        return extract_raw_text_from_docx(path)
+    with open(path, "r", encoding="utf-8", errors="ignore") as f:
+        return f.read()
+

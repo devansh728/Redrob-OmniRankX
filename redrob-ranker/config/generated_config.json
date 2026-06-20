@@ -1,0 +1,55 @@
+{
+  "meta": {
+    "compiled_timestamp": "2026-06-20T17:12:32Z",
+    "jd_source_file": "job_description.docx",
+    "ambiguity_damping_factor": 0.06
+  },
+  "constraints": {
+    "experience": {
+      "min": 5.0,
+      "max": 9.0
+    },
+    "blacklist_firms": [],
+    "forbidden_industries": []
+  },
+  "semantic_targets": {
+    "business_intent": "Redrob AI seeks a senior AI engineer to build a new AI engineering org, focusing on improving recruiter-engagement metrics.",
+    "primary_persona": "ProductEngineer",
+    "evidence_expectations": [
+      "Deep technical knowledge of modern ML systems",
+      "Experience with embeddings, retrieval, ranking, LLMs, and fine-tuning",
+      "Scrappy product-engineering attitude",
+      "Willingness to ship working systems quickly",
+      "Experience in setting up evaluation infrastructure"
+    ],
+    "bounded_concept_expansions": [
+      "AI Engineering",
+      "Machine Learning",
+      "Product Engineering",
+      "Recruitment Technology",
+      "Data Science",
+      "Search Engine Optimization",
+      "Candidate Matching",
+      "User Experience",
+      "Recruiter Experience",
+      "Engineering Culture",
+      "System Architecture",
+      "Team Leadership",
+      "Product Development",
+      "Evaluation Frameworks",
+      "Real User Feedback"
+    ],
+    "jd_query": "ProductEngineer Deep technical knowledge of modern ML systems Experience with embeddings, retrieval, ranking, LLMs, and fine-tuning Scrappy product-engineering attitude Willingness to ship working systems quickly Experience in setting up evaluation infrastructure"
+  },
+  "behavioral_priorities": {
+    "startup_velocity_coefficient": 0.1,
+    "shipper_vs_researcher_coefficient": 1.0,
+    "builder_vs_manager_coefficient": 1.0
+  },
+  "normalized_fusion_weights": {
+    "semantic": 0.2707,
+    "trajectory": 0.1504,
+    "behavioral": 0.4737,
+    "logistics": 0.1053
+  }
+}

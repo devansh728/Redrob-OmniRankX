@@ -3,7 +3,8 @@ import sys
 import time
 import csv
 from pipeline import loader, pruner, semantic, trajectory, behavioral, fusion
-from config import settings
+from config.config_loader import load_runtime_config
+settings = load_runtime_config()
 
 def main():
     start_time = time.time()
