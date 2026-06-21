@@ -1,0 +1,88 @@
+{
+  "meta": {
+    "compiled_timestamp": "2026-06-21T15:35:52Z",
+    "jd_source_file": "job_description.docx",
+    "ambiguity_damping_factor": 0.15
+  },
+  "constraints": {
+    "min_years_experience": 5.0,
+    "max_years_experience": 9.0,
+    "preferred_cities": [
+      "Pune",
+      "Noida"
+    ],
+    "willing_to_relocate_required": false,
+    "max_notice_period_days": 30,
+    "max_salary_budget_lpa": 60.0,
+    "hard_disqualifiers": [
+      {
+        "condition_name": "No pure researchers",
+        "target_field_path": "career_history.industry",
+        "check_operator": "NOT_EQUALS",
+        "rejection_value": "Research",
+        "traceability": {
+          "extracted_fact": "Must have shipped to production",
+          "verbatim_text_quote": "We will not move forward with pure researchers",
+          "source_section": "Disqualifiers"
+        }
+      }
+    ],
+    "soft_disqualifiers": [],
+    "bounded_concept_expansions": [
+      "Vector DBs",
+      "Ranking algorithms",
+      "System Design"
+    ]
+  },
+  "semantic_targets": {
+    "business_intent": "To build a new AI Engineering org for a talent intelligence platform",
+    "primary_persona": "A senior AI engineer with a scrappy product-engineering attitude and deep technical depth in modern ML systems",
+    "anti_personas": [
+      "A senior engineer who has spent their career bouncing between early-stage startups",
+      "A senior engineer who has spent their career in pure research environments",
+      "A senior engineer who has moved into 'architecture' or 'tech lead' roles",
+      "A senior engineer who hasn't written production code in the last 18 months",
+      "A title-chaser who optimizes for 'Senior' \u2192 'Staff' \u2192 'Principal' titles",
+      "A framework enthusiast who writes a lot of LangChain tutorials and blog posts",
+      "A senior engineer who has only worked at consulting firms for their entire career",
+      "A senior engineer whose primary expertise is computer vision, speech, or robotics without significant NLP/IR exposure",
+      "A senior engineer whose work has been entirely on closed-source proprietary systems for 5+ years without external validation"
+    ],
+    "tier1_mandatory_evidence": [
+      {
+        "requirement_name": "Built retrieval systems",
+        "evidence_proof_expectations": [
+          "Scaled vector DB",
+          "Tuned BM25"
+        ],
+        "is_mandatory_tier1": true,
+        "traceability": {
+          "extracted_fact": "Must have search experience",
+          "verbatim_text_quote": "Experience with embeddings and ranking",
+          "source_section": "Requirements"
+        }
+      }
+    ],
+    "tier2_preferred_evidence": []
+  },
+  "behavioral_priorities": {
+    "startup_vs_enterprise": 9,
+    "shipper_vs_researcher": 10,
+    "builder_vs_manager": 8,
+    "generalist_vs_specialist": 6,
+    "jd_ambiguity_score": 3,
+    "raw_text_mention_counts": {
+      "location": 2,
+      "notice_period": 1,
+      "salary": 0,
+      "skills": 14,
+      "architecture": 5
+    }
+  },
+  "normalized_fusion_weights": {
+    "semantic": 0.4328,
+    "trajectory": 0.1791,
+    "behavioral": 0.2388,
+    "logistics": 0.1493
+  }
+}
