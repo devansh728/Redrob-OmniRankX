@@ -1,88 +1,396 @@
 {
   "meta": {
-    "compiled_timestamp": "2026-06-21T15:35:52Z",
+    "compiled_timestamp": "2026-06-22T05:05:35Z",
     "jd_source_file": "job_description.docx",
-    "ambiguity_damping_factor": 0.15
+    "ambiguity_damping_factor": 0.3,
+    "chunk_count": 6
   },
   "constraints": {
-    "min_years_experience": 5.0,
-    "max_years_experience": 9.0,
+    "min_years_experience": 6.0,
+    "max_years_experience": 8.0,
     "preferred_cities": [
       "Pune",
       "Noida"
     ],
-    "willing_to_relocate_required": false,
+    "willing_to_relocate_required": true,
     "max_notice_period_days": 30,
-    "max_salary_budget_lpa": 60.0,
+    "max_salary_budget_lpa": 0.0,
     "hard_disqualifiers": [
       {
-        "condition_name": "No pure researchers",
-        "target_field_path": "career_history.industry",
-        "check_operator": "NOT_EQUALS",
-        "rejection_value": "Research",
+        "condition_name": "Researcher",
+        "target_field_path": "career_history.career_role",
+        "check_operator": "CONTAINS",
+        "rejection_value": "researcher",
         "traceability": {
-          "extracted_fact": "Must have shipped to production",
-          "verbatim_text_quote": "We will not move forward with pure researchers",
-          "source_section": "Disqualifiers"
+          "extracted_fact": "This role requires someone who is comfortable with both deep technical depth in modern ML systems and a scrappy product-engineering attitude.",
+          "verbatim_text_quote": "This role requires someone who is comfortable with both deep technical depth in modern ML systems and a scrappy product-engineering attitude.",
+          "source_section": "chunk_1_of_6"
+        }
+      },
+      {
+        "condition_name": "pure_research",
+        "target_field_path": "experience.career.career_environment",
+        "check_operator": "CONTAINS",
+        "rejection_value": "academic labs, research-only roles",
+        "traceability": {
+          "extracted_fact": "The candidate must have spent their career in pure research environments without any production deployment.",
+          "verbatim_text_quote": "If you've spent your career in pure research environments (academic labs, research-only roles) without any production deployment \u2014 we will not move forward.",
+          "source_section": "chunk_2_of_6"
+        }
+      },
+      {
+        "condition_name": "recent_experience",
+        "target_field_path": "experience",
+        "check_operator": "NOT_EQUALS",
+        "rejection_value": "recent (under 12 months) projects using LangChain to call OpenAI",
+        "traceability": {
+          "extracted_fact": "recent projects using LangChain to call OpenAI are disqualifying",
+          "verbatim_text_quote": "If your 'AI experience' consists primarily of recent (under 12 months) projects using LangChain to call OpenAI \u2014 we will probably not move forward",
+          "source_section": "chunk_3_of_6"
+        }
+      },
+      {
+        "condition_name": "senior_engineer_role",
+        "target_field_path": "experience",
+        "check_operator": "NOT_EQUALS",
+        "rejection_value": "senior engineer who hasn't written production code in the last 18 months because you've moved into 'architecture' or 'tech lead' roles",
+        "traceability": {
+          "extracted_fact": "senior engineer roles are disqualifying",
+          "verbatim_text_quote": "If you are a senior engineer who hasn't written production code in the last 18 months because you've moved into 'architecture' or 'tech lead' roles \u2014 we will probably not move forward",
+          "source_section": "chunk_3_of_6"
+        }
+      },
+      {
+        "condition_name": "Title-chasers",
+        "target_field_path": "career_trajectory",
+        "check_operator": "CONTAINS",
+        "rejection_value": "Senior \u2192 Staff \u2192 Principal",
+        "traceability": {
+          "extracted_fact": "Candidates who optimize for senior titles by switching companies every 1.5 years are not a fit",
+          "verbatim_text_quote": "Title-chasers. If your career trajectory shows you optimizing for \"Senior\" \u2192 \"Staff\" \u2192 \"Principal\" titles by switching companies every 1.5 years, we're not a fit.",
+          "source_section": "chunk_4_of_6"
+        }
+      },
+      {
+        "condition_name": "Framework enthusiasts",
+        "target_field_path": "github_contributions",
+        "check_operator": "CONTAINS",
+        "rejection_value": "LangChain tutorials",
+        "traceability": {
+          "extracted_fact": "Candidates who focus on frameworks rather than systems are not a fit",
+          "verbatim_text_quote": "Framework enthusiasts. If your GitHub is full of LangChain tutorials and your blog posts are \"How I used [hot framework] to build [demo]\" \u2014 that's fine but it's not what we need. We need people who think about systems, not frameworks.",
+          "source_section": "chunk_4_of_6"
+        }
+      },
+      {
+        "condition_name": "Consulting firms",
+        "target_field_path": "previous_company",
+        "check_operator": "CONTAINS",
+        "rejection_value": "TCS, Infosys, Wipro, Accenture, Cognizant, Capgemini, etc.",
+        "traceability": {
+          "extracted_fact": "Candidates from consulting firms are not a fit",
+          "verbatim_text_quote": "People who have only worked at consulting firms (TCS, Infosys, Wipro, Accenture, Cognizant, Capgemini, etc.) in their entire career. We've had bad fit experiences in both directions.",
+          "source_section": "chunk_4_of_6"
+        }
+      },
+      {
+        "condition_name": "Closed-source proprietary systems",
+        "target_field_path": "previous_company",
+        "check_operator": "CONTAINS",
+        "rejection_value": "closed-source proprietary systems",
+        "traceability": {
+          "extracted_fact": "Candidates from closed-source proprietary systems are not a fit",
+          "verbatim_text_quote": "People whose work has been entirely on closed-source proprietary systems for 5+ years without external validation (papers, talks, open-source). We need to see how you think, not just trust that you can think.",
+          "source_section": "chunk_4_of_6"
+        }
+      },
+      {
+        "condition_name": "NoStableCodebase",
+        "target_field_path": "job_role.skillset.stable_codebase",
+        "check_operator": "NOT_EQUALS",
+        "rejection_value": "true",
+        "traceability": {
+          "extracted_fact": "Candidates need a stable codebase to be productive.",
+          "verbatim_text_quote": "If you need a stable, mature codebase to be productive, you'll find this role unstable.",
+          "source_section": "chunk_5_of_6"
+        }
+      },
+      {
+        "condition_name": "No_Relevant_Work_History",
+        "target_field_path": "career_history.title",
+        "check_operator": "NOT_EQUALS",
+        "rejection_value": "Marketing Manager",
+        "traceability": {
+          "extracted_fact": "A candidate who has all the AI keywords listed as skills but whose title is 'Marketing Manager' is not a fit, no matter how perfect their skill list looks.",
+          "verbatim_text_quote": "A candidate who has all the AI keywords listed as skills but whose title is 'Marketing Manager' is not a fit, no matter how perfect their skill list looks.",
+          "source_section": "chunk_6_of_6"
         }
       }
     ],
-    "soft_disqualifiers": [],
+    "soft_disqualifiers": [
+      {
+        "condition_name": "Bounce Between Startups",
+        "target_field_path": "career_history.career_role",
+        "penalty_weight": 0.5,
+        "escape_clause_condition": "If you've spent your career at Google or Meta and you want a well-scoped role with a defined ladder, this isn't it.",
+        "has_escape_hatch": true,
+        "traceability": {
+          "extracted_fact": "This role is not suitable for someone who has spent their career bouncing between early-stage startups.",
+          "verbatim_text_quote": "This role is not suitable for someone who has spent their career bouncing between early-stage startups.",
+          "source_section": "chunk_1_of_6"
+        }
+      },
+      {
+        "condition_name": "architecture_or_tech_lead_experience",
+        "target_field_path": "experience",
+        "penalty_weight": 0.5,
+        "escape_clause_condition": "If you have prior exposure to HR-tech, recruiting tech, or marketplace products, this role will be very painful",
+        "has_escape_hatch": true,
+        "traceability": {
+          "extracted_fact": "prior exposure to HR-tech, recruiting tech, or marketplace products is a negative signal",
+          "verbatim_text_quote": "Prior exposure to HR-tech, recruiting tech, or marketplace products",
+          "source_section": "chunk_3_of_6"
+        }
+      },
+      {
+        "condition_name": "Computer vision, speech, or robotics",
+        "target_field_path": "primary_expertise",
+        "penalty_weight": 0.5,
+        "escape_clause_condition": "prior product-company experience",
+        "has_escape_hatch": true,
+        "traceability": {
+          "extracted_fact": "Candidates with expertise in computer vision, speech, or robotics are not a fit",
+          "verbatim_text_quote": "People whose primary expertise is computer vision, speech, or robotics without significant NLP/IR exposure. We respect your work but you'd be re-learning fundamentals here.",
+          "source_section": "chunk_4_of_6"
+        }
+      },
+      {
+        "condition_name": "NoRedrobPlatform",
+        "target_field_path": "candidate.platform_activity.Redrob_platform_activity",
+        "penalty_weight": 0.5,
+        "escape_clause_condition": "Active on Redrob platform (or has clear signal of being in the job market)",
+        "has_escape_hatch": true,
+        "traceability": {
+          "extracted_fact": "Candidates need to be active on Redrob platform.",
+          "verbatim_text_quote": "Active on Redrob platform (or has clear signal of being in the job market) so we can actually talk to them.",
+          "source_section": "chunk_5_of_6"
+        }
+      },
+      {
+        "condition_name": "Inactive_Candidate",
+        "target_field_path": "recruiter_response_rate",
+        "penalty_weight": 0.5,
+        "escape_clause_condition": "Candidate has logged in within the last 3 months",
+        "has_escape_hatch": true,
+        "traceability": {
+          "extracted_fact": "A perfect-on-paper candidate who hasn't logged in for 6 months and has a 5% recruiter response rate is, for hiring purposes, not actually available.",
+          "verbatim_text_quote": "A perfect-on-paper candidate who hasn't logged in for 6 months and has a 5% recruiter response rate is, for hiring purposes, not actually available.",
+          "source_section": "chunk_6_of_6"
+        }
+      }
+    ],
     "bounded_concept_expansions": [
-      "Vector DBs",
-      "Ranking algorithms",
-      "System Design"
+      "AI Engineering",
+      "Modern ML Systems",
+      "Product Engineering",
+      "ranking",
+      "retrieval",
+      "matching",
+      "recruiters",
+      "candidates",
+      "embeddings",
+      "hybrid retrieval",
+      "LLM-based re-ranking",
+      "candidate-JD matching",
+      "production experience with embeddings-based retrieval systems",
+      "vector databases or hybrid search infrastructure",
+      "strong Python"
     ]
   },
   "semantic_targets": {
-    "business_intent": "To build a new AI Engineering org for a talent intelligence platform",
-    "primary_persona": "A senior AI engineer with a scrappy product-engineering attitude and deep technical depth in modern ML systems",
+    "business_intent": "We are building a new AI Engineering org from scratch at Redrob AI, a Series A company, and we need a Senior AI Engineer who can balance deep technical depth in modern ML systems and a scrappy product-engineering attitude.",
+    "primary_persona": "A candidate with 6-8 years of total experience, 4-5 in applied ML/AI roles at product companies, strong opinions on retrieval, evaluation, and LLM integration, and a proven track record of shipping systems to real users.",
     "anti_personas": [
-      "A senior engineer who has spent their career bouncing between early-stage startups",
-      "A senior engineer who has spent their career in pure research environments",
-      "A senior engineer who has moved into 'architecture' or 'tech lead' roles",
-      "A senior engineer who hasn't written production code in the last 18 months",
-      "A title-chaser who optimizes for 'Senior' \u2192 'Staff' \u2192 'Principal' titles",
-      "A framework enthusiast who writes a lot of LangChain tutorials and blog posts",
-      "A senior engineer who has only worked at consulting firms for their entire career",
-      "A senior engineer whose primary expertise is computer vision, speech, or robotics without significant NLP/IR exposure",
-      "A senior engineer whose work has been entirely on closed-source proprietary systems for 5+ years without external validation"
+      "Someone with a well-scoped role and a defined ladder.",
+      "Someone who wants to 'just code' without thinking about product or recruiter workflows or evaluation frameworks.",
+      "candidates with a career in pure research environments without production deployment",
+      "A recent project developer using LangChain to call OpenAI, a senior engineer who hasn't written production code in the last 18 months, a candidate who hasn't thought about rigorous evaluation of ranking systems rigorously.",
+      "Title-chasers",
+      "Framework enthusiasts",
+      "People who have only worked at consulting firms",
+      "People whose primary expertise is computer vision, speech, or robotics without significant NLP/IR exposure",
+      "People whose work has been entirely on closed-source proprietary systems for 5+ years without external validation",
+      "Candidates who find writing painful or who disagree openly and decide quickly.",
+      "Candidates who need a stable, mature codebase to be productive.",
+      "A candidate who has all the AI keywords listed as skills but whose title is 'Marketing Manager'"
     ],
     "tier1_mandatory_evidence": [
       {
-        "requirement_name": "Built retrieval systems",
+        "requirement_name": "Experience in modern ML systems",
         "evidence_proof_expectations": [
-          "Scaled vector DB",
-          "Tuned BM25"
+          "5-9 years of experience in modern ML systems including embeddings, retrieval, ranking, LLMs, and fine-tuning"
         ],
         "is_mandatory_tier1": true,
         "traceability": {
-          "extracted_fact": "Must have search experience",
-          "verbatim_text_quote": "Experience with embeddings and ranking",
-          "source_section": "Requirements"
+          "extracted_fact": "The role requires 5-9 years of experience in modern ML systems.",
+          "verbatim_text_quote": "We need someone who is simultaneously comfortable with two things that sound contradictory: Deep technical depth in modern ML systems \u2014 embeddings, retrieval, ranking, LLMs, fine-tuning.",
+          "source_section": "chunk_1_of_6"
+        }
+      },
+      {
+        "requirement_name": "Audit current systems",
+        "evidence_proof_expectations": [
+          "Audit what Redrob currently has and identify the highest-leverage areas to improve"
+        ],
+        "is_mandatory_tier1": true,
+        "traceability": {
+          "extracted_fact": "Audit current systems and identify areas for improvement.",
+          "verbatim_text_quote": "Audit what we currently have (it's mostly BM25 + rule-based scoring, working but not great). Identify the 3-4 highest-leverage things to fix.",
+          "source_section": "chunk_2_of_6"
+        }
+      },
+      {
+        "requirement_name": "Ship a v2 ranking system",
+        "evidence_proof_expectations": [
+          "Demonstrably improve recruiter-engagement metrics with a v2 ranking system involving embeddings, hybrid retrieval, and LLM-based re-ranking"
+        ],
+        "is_mandatory_tier1": true,
+        "traceability": {
+          "extracted_fact": "Ship a v2 ranking system that demonstrably improves recruiter-engagement metrics.",
+          "verbatim_text_quote": "Ship a v2 ranking system that demonstrably improves recruiter-engagement metrics. This will involve embeddings, hybrid retrieval, and probably some LLM-based re-ranking, but the architecture is your call.",
+          "source_section": "chunk_2_of_6"
+        }
+      },
+      {
+        "requirement_name": "Set up evaluation infrastructure",
+        "evidence_proof_expectations": [
+          "Set up offline benchmarks, online A/B testing, and recruiter-feedback loops"
+        ],
+        "is_mandatory_tier1": true,
+        "traceability": {
+          "extracted_fact": "Set up the evaluation infrastructure \u2014 offline benchmarks, online A/B testing, recruiter-feedback loops \u2014 so we can keep improving without flying blind.",
+          "verbatim_text_quote": "Beyond that, you'll be driving the long-term architecture of how we do candidate-JD matching at scale, mentoring the next round of hires (we're growing the team from 4 to 12 engineers in the next year), and working closely with our recruiter-experience PM on what to build.",
+          "source_section": "chunk_2_of_6"
+        }
+      },
+      {
+        "requirement_name": "Embeddings-based retrieval systems",
+        "evidence_proof_expectations": [
+          "Production experience with embeddings-based retrieval systems deployed to real users, such as sentence-transformers, OpenAI embeddings, BGE, E5, or similar, handling embedding drift, index refresh, and retrieval-quality regression in production."
+        ],
+        "is_mandatory_tier1": true,
+        "traceability": {
+          "extracted_fact": "The role requires production experience with embeddings-based retrieval systems.",
+          "verbatim_text_quote": "Production experience with embeddings-based retrieval systems (sentence-transformers, OpenAI embeddings, BGE, E5, or similar) deployed to real users.",
+          "source_section": "chunk_3_of_6"
+        }
+      },
+      {
+        "requirement_name": "Vector databases or hybrid search infrastructure",
+        "evidence_proof_expectations": [
+          "Production experience with vector databases or hybrid search infrastructure, such as Pinecone, Weaviate, Qdrant, Milvus, OpenSearch, Elasticsearch, FAISS, or something similar, with operational experience."
+        ],
+        "is_mandatory_tier1": true,
+        "traceability": {
+          "extracted_fact": "The role requires production experience with vector databases or hybrid search infrastructure.",
+          "verbatim_text_quote": "Production experience with vector databases or hybrid search infrastructure (Pinecone, Weaviate, Qdrant, Milvus, OpenSearch, Elasticsearch, FAISS, or something similar).",
+          "source_section": "chunk_3_of_6"
+        }
+      },
+      {
+        "requirement_name": "Strong Python",
+        "evidence_proof_expectations": [
+          "Strong Python skills, with code quality as a priority."
+        ],
+        "is_mandatory_tier1": true,
+        "traceability": {
+          "extracted_fact": "The role emphasizes strong Python skills.",
+          "verbatim_text_quote": "Strong Python. Yes really, we care about code quality.",
+          "source_section": "chunk_3_of_6"
+        }
+      },
+      {
+        "requirement_name": "Evaluation frameworks design",
+        "evidence_proof_expectations": [
+          "Hands-on experience designing evaluation frameworks for ranking systems, including NDCG, MRR, MAP, offline-to-online correlation, A/B test interpretation."
+        ],
+        "is_mandatory_tier1": true,
+        "traceability": {
+          "extracted_fact": "The role requires hands-on experience designing evaluation frameworks for ranking systems.",
+          "verbatim_text_quote": "Hands-on experience designing evaluation frameworks for ranking systems (NDCG, MRR, MAP, offline-to-online correlation, A/B test interpretation).",
+          "source_section": "chunk_3_of_6"
+        }
+      },
+      {
+        "requirement_name": "Open-source contributions",
+        "evidence_proof_expectations": [
+          "Open-source contributions in the AI/ML space"
+        ],
+        "is_mandatory_tier1": true,
+        "traceability": {
+          "extracted_fact": "The role requires open-source contributions in the AI/ML space.",
+          "verbatim_text_quote": "Open-source contributions in the AI/ML space",
+          "source_section": "chunk_4_of_6"
+        }
+      },
+      {
+        "requirement_name": "Experience in Applied ML/AI",
+        "evidence_proof_expectations": [
+          "6-8 years total experience, of which 4-5 are in applied ML/AI roles at product companies"
+        ],
+        "is_mandatory_tier1": true,
+        "traceability": {
+          "extracted_fact": "The role requires candidates with specific experience in applied ML/AI roles at product companies.",
+          "verbatim_text_quote": "6-8 years total experience, of which 4-5 are in applied ML/AI roles at product companies (not pure services).",
+          "source_section": "chunk_5_of_6"
+        }
+      },
+      {
+        "requirement_name": "Behavioral Signals",
+        "evidence_proof_expectations": [
+          "A perfect-on-paper candidate who hasn't logged in for 6 months and has a 5% recruiter response rate is not actually available."
+        ],
+        "is_mandatory_tier1": true,
+        "traceability": {
+          "extracted_fact": "A candidate who hasn't logged in for 6 months and has a 5% recruiter response rate is not actually available.",
+          "verbatim_text_quote": "A perfect-on-paper candidate who hasn't logged in for 6 months and has a 5% recruiter response rate is, for hiring purposes, not actually available.",
+          "source_section": "chunk_6_of_6"
         }
       }
     ],
-    "tier2_preferred_evidence": []
+    "tier2_preferred_evidence": [
+      {
+        "requirement_name": "End-to-End Systems Experience",
+        "evidence_proof_expectations": [
+          "Has shipped at least one end-to-end ranking, search, or recommendation system to real users at meaningful scale"
+        ],
+        "is_mandatory_tier1": false,
+        "traceability": {
+          "extracted_fact": "The role prefers candidates who have shipped systems to real users at meaningful scale.",
+          "verbatim_text_quote": "Has shipped at least one end-to-end ranking, search, or recommendation system to real users at meaningful scale.",
+          "source_section": "chunk_5_of_6"
+        }
+      }
+    ]
   },
   "behavioral_priorities": {
-    "startup_vs_enterprise": 9,
-    "shipper_vs_researcher": 10,
-    "builder_vs_manager": 8,
-    "generalist_vs_specialist": 6,
-    "jd_ambiguity_score": 3,
+    "startup_vs_enterprise": 6,
+    "shipper_vs_researcher": 6,
+    "builder_vs_manager": 5,
+    "generalist_vs_specialist": 5,
+    "jd_ambiguity_score": 6,
     "raw_text_mention_counts": {
-      "location": 2,
-      "notice_period": 1,
+      "location": 6,
+      "notice_period": 4,
       "salary": 0,
-      "skills": 14,
-      "architecture": 5
+      "skills": 35,
+      "architecture": 8
     }
   },
   "normalized_fusion_weights": {
-    "semantic": 0.4328,
-    "trajectory": 0.1791,
-    "behavioral": 0.2388,
-    "logistics": 0.1493
+    "semantic": 0.4164,
+    "trajectory": 0.3979,
+    "behavioral": 0.1061,
+    "logistics": 0.0796
   }
 }
