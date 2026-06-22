@@ -94,7 +94,26 @@ _STOPWORDS_TITLECASE = {
     "If", "It", "Is", "Are", "Be", "A", "An", "And", "Or", "But", "For",
     "In", "On", "At", "To", "Of", "With", "As", "By", "From", "Most",
     "Some", "What", "How", "Why", "When", "Where", "Things", "Final",
-    "Let", "Note", "Beyond", "Some", "Here", "Senior", "Series",
+    "Let", "Note", "Beyond", "Here", "Senior", "Series", "They", "He",
+    "She", "I", "There", "Here", "Then", "Now", "So", "Also", "Even",
+    "While", "Once", "Weeks", "Months", "Years", "Days", "People",
+    "Candidates", "Engineers", "Engineer", "Team", "Teams",
+}
+
+# Document-template field labels. These are structural scaffolding that
+# almost every JD document shares (headers like "Job Description:",
+# "Employment Type:", "Experience Required:") — they describe the SHAPE
+# of the document, not a fact specific to THIS JD. Flagging them as
+# "critical tokens the config must preserve" produces guaranteed false
+# alarms on every JD, since no config schema has a field for "the word
+# that happened to label a header." This list is generic across JD
+# documents, not tuned to one specific JD's content.
+_DOCUMENT_TEMPLATE_LABELS = {
+    "job description", "company", "location", "employment type",
+    "experience required", "role", "position", "department", "reports to",
+    "salary range", "compensation", "about us", "about the role",
+    "responsibilities", "requirements", "qualifications", "benefits",
+    "how to apply", "job title", "team", "founding team",
 }
 
 
@@ -102,19 +121,54 @@ def _extract_proper_nouns(text: str) -> list:
     """Capitalized words/phrases that look like names, companies, or places.
 
     Catches single capitalized tokens (Pune, TCS, Infosys) and short
-    capitalized phrases (Delhi NCR). Filters out common sentence-starting
-    words via _STOPWORDS_TITLECASE so "The", "This", etc. don't pollute
-    the critical-token list.
+    capitalized phrases (Delhi NCR, Series A). Filters out three sources
+    of false positives:
+      1. Common sentence-starting words (The, This, They, Weeks) via
+         _STOPWORDS_TITLECASE.
+      2. Document-template field labels (Job Description, Employment
+         Type) via _DOCUMENT_TEMPLATE_LABELS — these describe document
+         structure, not JD-specific facts.
+      3. Phrases that accidentally span a paragraph/line break — matched
+         on a per-line basis only, so "...Founding Team" at the end of
+         one line can never glue onto "Company..." at the start of the
+         next, which produced a nonsense token in an earlier version.
     """
-    candidates = re.findall(r"\b[A-Z][a-zA-Z]{1,}(?:\s+[A-Z][a-zA-Z]{1,}){0,2}\b", text)
     out = []
-    for c in candidates:
-        first_word = c.split()[0]
-        if first_word in _STOPWORDS_TITLECASE:
-            continue
-        if len(c) < 2:
-            continue
-        out.append(c)
+    # Process line-by-line so a capitalized phrase can never span a
+    # newline. \s in the original pattern matched newlines too, which
+    # merged unrelated phrases from adjacent lines/paragraphs into one
+    # garbage token (e.g. "Founding Team\n\nCompany").
+    for line in text.split("\n"):
+        candidates = re.findall(r"\b[A-Z][a-zA-Z]{1,}(?:[ \t]+[A-Z][a-zA-Z]{1,}){0,2}\b", line)
+        for c in candidates:
+            words = c.split()
+            first_word = words[0]
+
+            if first_word in _STOPWORDS_TITLECASE:
+                continue
+            if c.strip().lower() in _DOCUMENT_TEMPLATE_LABELS:
+                continue
+            if len(c) < 2:
+                continue
+
+            # Single-word capitalized tokens are an ambiguous signal in
+            # Title-Case (e.g. "They" vs "TCS" both start with one
+            # capital letter) but an UNAMBIGUOUS signal when the word is
+            # fully uppercase (TCS, NLP, LLM) -- ordinary English
+            # sentence-starters are never all-caps multi-letter acronyms,
+            # so those are trusted regardless of position in the text.
+            # Title-Case single words (Pune, Weeks, They) are weaker
+            # signals and need the mid-sentence corroboration check,
+            # since they're indistinguishable from a word that merely
+            # opened a sentence.
+            if len(words) == 1:
+                is_all_caps_acronym = first_word.isupper() and len(first_word) >= 2
+                if not is_all_caps_acronym:
+                    mid_sentence_pattern = r"[a-z,;:)\]]\s+" + re.escape(first_word) + r"\b"
+                    if not re.search(mid_sentence_pattern, text):
+                        continue
+
+            out.append(c)
     return out
 
 
