@@ -1,3 +1,27 @@
+"""
+semantic.py — Stage 2: dual-source semantic scoring via RRF fusion of
+career-text embeddings, BM25 lexical matching, and skill-assessment
+alignment.
+
+WHAT CHANGED:
+config.JD_SKILL_WEIGHTS is now a list of (keyword_phrase, weight) tuples
+derived from the compiled JD's tier1/tier2 evidence (see
+config_loader.py's _derive_skill_keywords_from_evidence), not a flat dict
+keyed by exact skill name. The previous version did an exact dict lookup
+(scores.get(skill, 0.0)) against config.JD_SKILL_WEIGHTS.items() — since
+that dict was always empty (confirmed dead code path), skill_scores
+silently computed 0.0 for every candidate, every run.
+
+The fix does substring matching: for each candidate's actual
+skill_assessment_scores keys (which are candidate data, not known to the
+compiler in advance — e.g. "Fine-tuning LLMs", "FAISS", "Pinecone"), check
+whether any derived JD keyword phrase appears in (or contains) that key,
+case-insensitively. This is intentionally approximate — see the limitation
+note in config_loader.py — but a missed match safely contributes nothing
+rather than penalizing a candidate, which is the correct failure mode for
+an approximate signal feeding into a multi-source RRF fusion.
+"""
+
 import os
 import numpy as np
 import onnxruntime as ort
@@ -5,17 +29,60 @@ from transformers import AutoTokenizer
 from rank_bm25 import BM25Okapi
 from utils.text_utils import concat_career_text, tokenize_for_bm25
 
+
 def load_embedder(model_dir="models/bge-small-en-v1.5-int8"):
     tokenizer = AutoTokenizer.from_pretrained(model_dir)
     session = ort.InferenceSession(os.path.join(model_dir, "model.onnx"))
     return tokenizer, session
 
+
 def get_rrf_ranks(candidates, scores_dict):
     sorted_candidates = sorted(
         candidates,
-        key=lambda c: (-scores_dict[c["candidate_id"]], c["candidate_id"])
+        key=lambda c: (-scores_dict[c["candidate_id"]], c["candidate_id"]),
     )
     return {c["candidate_id"]: rank + 1 for rank, c in enumerate(sorted_candidates)}
+
+
+def score_skill_alignment(candidate: dict, jd_skill_weights: list) -> float:
+    """Computes a weighted skill-alignment score for one candidate.
+
+    Input: a candidate dict, a list of (keyword_phrase, weight) tuples.
+    Output: float 0.0-1.0.
+    How it works: for each of the candidate's actual
+            skill_assessment_scores entries, finds every JD keyword phrase
+            that substring-matches the skill name (in either direction —
+            "LLMs" matches inside "Fine-tuning LLMs", and a JD keyword
+            that happens to BE a full skill name matches directly), and
+            accumulates weight * (score / 100) for each match. The final
+            sum is normalized by the total weight actually matched, not
+            by the full JD_SKILL_WEIGHTS list — a candidate should not be
+            penalized for skills the JD never asked about; only the
+            skills the JD DID ask about, weighted by how well they
+            assessed, should determine this score.
+    """
+    if not jd_skill_weights:
+        return 0.0
+
+    scores = candidate.get("redrob_signals", {}).get("skill_assessment_scores", {}) or {}
+    if not scores:
+        return 0.0
+
+    matched_weight_sum = 0.0
+    total_matched_weight = 0.0
+    for skill_name, raw_score in scores.items():
+        skill_lower = skill_name.lower()
+        for keyword, weight in jd_skill_weights:
+            kw_lower = keyword.lower()
+            if kw_lower in skill_lower or skill_lower in kw_lower:
+                matched_weight_sum += weight * (raw_score / 100.0)
+                total_matched_weight += weight
+                break  # one keyword match per skill is enough signal
+
+    if total_matched_weight <= 0.0:
+        return 0.0
+    return min(1.0, matched_weight_sum / total_matched_weight)
+
 
 def run(candidates, embedder=None, config=None):
     if not candidates:
@@ -36,13 +103,13 @@ def run(candidates, embedder=None, config=None):
         batch_size = 64
         embeddings_list = []
         for i in range(0, len(texts), batch_size):
-            batch_texts = texts[i:i+batch_size]
+            batch_texts = texts[i:i + batch_size]
             inputs = tokenizer(
                 batch_texts,
                 padding=True,
                 truncation=True,
                 max_length=512,
-                return_tensors="np"
+                return_tensors="np",
             )
             ort_inputs = {name: inputs[name].astype(np.int64) for name in input_names if name in inputs}
             outputs = session.run(None, ort_inputs)
@@ -58,7 +125,7 @@ def run(candidates, embedder=None, config=None):
             padding=True,
             truncation=True,
             max_length=512,
-            return_tensors="np"
+            return_tensors="np",
         )
         q_ort_inputs = {name: q_inputs[name].astype(np.int64) for name in input_names if name in q_inputs}
         q_outputs = session.run(None, q_ort_inputs)
@@ -77,16 +144,10 @@ def run(candidates, embedder=None, config=None):
     bm25_raw = bm25.get_scores(q_tokens)
     bm25_scores = {c["candidate_id"]: float(bm25_raw[idx]) for idx, c in enumerate(candidates)}
 
-    skill_scores = {}
-    for c in candidates:
-        scores = c.get("redrob_signals", {}).get("skill_assessment_scores", {})
-        total_weight = 0.0
-        weighted_sum = 0.0
-        for skill, weight in config.JD_SKILL_WEIGHTS.items():
-            score = scores.get(skill, 0.0) / 100.0
-            weighted_sum += score * weight
-            total_weight += weight
-        skill_scores[c["candidate_id"]] = (weighted_sum / total_weight) if total_weight > 0 else 0.0
+    skill_scores = {
+        c["candidate_id"]: score_skill_alignment(c, config.JD_SKILL_WEIGHTS)
+        for c in candidates
+    }
 
     ranks_cos = get_rrf_ranks(candidates, cos_scores)
     ranks_bm25 = get_rrf_ranks(candidates, bm25_scores)
@@ -113,7 +174,7 @@ def run(candidates, embedder=None, config=None):
 
     sorted_result = sorted(
         candidates,
-        key=lambda c: (-c["semantic_score"], c["candidate_id"])
+        key=lambda c: (-c["semantic_score"], c["candidate_id"]),
     )
 
     return sorted_result[:config.STAGE2_TOP_K]

@@ -155,7 +155,7 @@ def segment_jd_text(raw_text: str, chunk_char_limit: int = CHUNK_CHAR_LIMIT) -> 
 # field — which we explicitly instruct the model to fill with the chunk
 # label we ourselves wrote into the prompt — was flagged as "copied,"
 # even though copying that exact string is the only correct answer.
-_ECHO_FIELD_KEYS = {"source_section"}
+_ECHO_FIELD_KEYS = {"source_section", "rule_type", "applies_to", "escape_rule_type"}
 
 # Minimum length for a string to be worth checking at all. Below this,
 # coincidental overlaps (operator names like "EQUALS", short city names)
@@ -437,6 +437,47 @@ def build_pass2_prompt(jd_chunk: str, chunk_label: str) -> tuple:
           "(years, days, salary), you MUST copy those specific names/numbers "
           "into your output exactly as written. Do not summarize or "
           "generalize a specific company name into a category."
+        + "\n\nEvery disqualifier must be classified into exactly one "
+          "rule_type from this fixed list, chosen by which kind of "
+          "candidate data the condition actually checks:\n"
+          "- career_industry_match: checks the industry label of roles in "
+          "a candidate's career history\n"
+          "- career_title_keyword: checks the job title text of roles in a "
+          "candidate's career history\n"
+          "- career_text_keyword: checks the free-text description content "
+          "of a candidate's roles for the presence or absence of certain "
+          "concepts\n"
+          "- company_name_match: checks whether a candidate's employer "
+          "names match a named list of companies\n"
+          "- tenure_pattern: checks the duration and frequency pattern of a "
+          "candidate's roles (how long they stayed, how often they moved)\n"
+          "- current_title_keyword: checks specifically a candidate's "
+          "current job title, separate from their full career history\n"
+          "- platform_activity: checks a candidate's engagement signals on "
+          "the hiring platform itself (activity, responsiveness, "
+          "application behavior)\n"
+          "- location_relocation: checks a candidate's location, country, "
+          "or willingness to relocate\n"
+          "- skill_or_domain_balance: checks whether a candidate shows "
+          "strong signal in one domain without a corroborating signal in a "
+          "related domain the role actually needs\n"
+          "- title_description_consistency: checks whether a role's title "
+          "is consistent with that same role's own description, to catch "
+          "mismatched or fabricated entries\n"
+          "- unresolved: use this ONLY if the condition genuinely does not "
+          "fit any category above\n"
+          "For career_text_keyword, skill_or_domain_balance, and "
+          "career_title_keyword rules, also populate primary_keywords (the "
+          "concept being checked for) and, for skill_or_domain_balance "
+          "specifically, corroborating_keywords (the related concept whose "
+          "absence makes the primary keywords a red flag). For "
+          "company_name_match, populate named_values with the literal "
+          "company names. For any rule whose target concerns "
+          "career_history, also set applies_to to one of: any_role (true if "
+          "ANY single role matches), all_roles (true only if EVERY role "
+          "matches), current_role_only (checks only the candidate's most "
+          "recent/current role), or not_applicable if the rule does not "
+          "concern career_history at all."
     )
     user_content = (
         f"This is section [{chunk_label}] of a job description.\n\n"
@@ -457,15 +498,21 @@ def build_pass2_prompt(jd_chunk: str, chunk_label: str) -> tuple:
         'here>,\n'
         '  "hard_disqualifiers": [\n'
         "    {\n"
-        '      "condition_name": "<short name of a condition this section '
-        'states causes outright rejection — look for rejection language '
-        'such as refusal, exclusion, or will-not-proceed phrasing>",\n'
-        '      "target_field_path": "<dot-notation path into the candidate '
-        'schema that this condition checks, naming whichever field this '
-        'condition actually concerns>",\n'
-        '      "check_operator": "<one of: EQUALS, NOT_EQUALS, CONTAINS, '
-        'GREATER_THAN, LESS_THAN>",\n'
-        '      "rejection_value": "<the value that triggers rejection>",\n'
+        '      "condition_name": "<short human-readable name of a '
+        'condition this section states causes outright rejection>",\n'
+        '      "rule_type": "<one of the fixed category names listed in '
+        'the system instructions above>",\n'
+        '      "applies_to": "<any_role, all_roles, current_role_only, or '
+        'not_applicable>",\n'
+        '      "primary_keywords": ["<concept terms this rule checks for, '
+        'else empty list>"],\n'
+        '      "corroborating_keywords": ["<only for skill_or_domain_balance '
+        'rules: the related concept whose ABSENCE matters, else empty '
+        'list>"],\n'
+        '      "named_values": ["<only for company_name_match rules: '
+        'literal company names, else empty list>"],\n'
+        '      "numeric_threshold": <only for tenure_pattern rules: a '
+        'relevant number such as a month or year threshold, else null>,\n'
         '      "traceability": {\n'
         '        "extracted_fact": "<your paraphrase>",\n'
         '        "verbatim_text_quote": "<exact short quote, under 20 '
@@ -476,13 +523,30 @@ def build_pass2_prompt(jd_chunk: str, chunk_label: str) -> tuple:
         "  ],\n"
         '  "soft_disqualifiers": [\n'
         "    {\n"
-        '      "condition_name": "<short name of a condition this section '
-        'frames as a NEGATIVE SIGNAL but not an outright rejection>",\n'
-        '      "target_field_path": "<candidate data field this checks>",\n'
+        '      "condition_name": "<short human-readable name of a '
+        'condition this section frames as a NEGATIVE SIGNAL but not an '
+        'outright rejection>",\n'
+        '      "rule_type": "<one of the fixed category names listed in '
+        'the system instructions above>",\n'
+        '      "applies_to": "<any_role, all_roles, current_role_only, or '
+        'not_applicable>",\n'
+        '      "primary_keywords": ["<concept terms this rule checks for, '
+        'else empty list>"],\n'
+        '      "corroborating_keywords": ["<only for skill_or_domain_balance '
+        'rules: the related concept whose ABSENCE matters, else empty '
+        'list>"],\n'
+        '      "named_values": ["<only for company_name_match rules: '
+        'literal company names, else empty list>"],\n'
+        '      "numeric_threshold": <only for tenure_pattern rules: a '
+        'relevant number, else null>,\n'
         '      "penalty_weight": <float 0.0-1.0, how severe this penalty is>,\n'
         '      "escape_clause_condition": "<if the section states an '
         'exception that would waive this penalty, describe that exception '
         'in your own words here, else null>",\n'
+        '      "escape_rule_type": "<if there is an escape clause, classify '
+        'IT using the same fixed category list, else unresolved>",\n'
+        '      "escape_keywords": ["<concept terms the escape condition '
+        'checks for, else empty list>"],\n'
         '      "has_escape_hatch": <true if an escape_clause_condition was '
         'found, else false>,\n'
         '      "traceability": {\n'
@@ -669,7 +733,7 @@ def run_pass3_over_chunks(llm, chunks: List[str], interactive: bool) -> Pass3Sch
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--jd-path", default="../India_runs_data_and_ai_challenge/job_description.docx")
-    parser.add_argument("--output-path", default="config/generated_config_new.json")
+    parser.add_argument("--output-path", default="config/generated_config_new_2.json")
     parser.add_argument("--model-path", default="models/qwen2.5-3b-instruct/Qwen2.5-3B-Instruct-Q4_K_M.gguf")
     parser.add_argument("--no-confirm", action="store_true", help="Skip interactive per-call confirmation")
     args = parser.parse_args()
@@ -718,7 +782,7 @@ def main():
     if missing_entities:
         print(f"\n[🚨 VALIDATION FAILURE ALERT] The compiled configuration dropped tokens "
               f"that are present in the source JD: {missing_entities}")
-        debug_path = output_abs_path.replace(".json", "_FAILED_DEBUG.json")
+        debug_path = output_abs_path.replace(".json", "_FAILED_DEBUG_2.json")
         os.makedirs(os.path.dirname(debug_path), exist_ok=True)
         with open(debug_path, "w", encoding="utf-8") as f:
             json.dump(master_config_output, f, indent=2)

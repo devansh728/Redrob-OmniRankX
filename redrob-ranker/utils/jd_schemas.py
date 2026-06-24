@@ -17,38 +17,131 @@ Design notes (read before editing):
   merge_pass3 below, rather than reassembling chunks into one giant prompt.
 """
 
-from typing import List, Optional, Dict, Any
+from enum import Enum
+from typing import List, Optional, Dict
 from pydantic import BaseModel, Field, field_validator
 
 
 class TraceableQuote(BaseModel):
-    extracted_fact: str
-    verbatim_text_quote: str
-    source_section: str
+    extracted_fact: str = "Fact omitted by model"
+    verbatim_text_quote: str = "Quote omitted by model"
+    source_section: str = "Unknown section"
+
+
+class RuleType(str, Enum):
+    """A small, fixed taxonomy of mechanically-checkable rule shapes.
+
+    This is the field that makes the pipeline JD-agnostic. condition_name
+    is free text the model invents per JD ("Title-chasers", "No PhD-only
+    careers", whatever it picks that run) — no Python branch can reliably
+    match on it across different compiler runs. rule_type is constrained
+    to this fixed enum, so every pipeline stage dispatches on rule_type,
+    never on condition_name. condition_name remains in the schema purely
+    as a human-readable label for logs and the reasoning generator.
+
+    Each value below maps to exactly one mechanically-executable check
+    against fields that genuinely exist in candidate_schema.json:
+      - CAREER_INDUSTRY_MATCH: checks career_history[].industry against a
+        value (e.g. all roles are "Research" or "Academia").
+      - CAREER_TITLE_KEYWORD: checks career_history[].title for keyword
+        presence/absence (e.g. "researcher", "marketing").
+      - CAREER_TEXT_KEYWORD: checks concatenated career description text
+        for keyword presence/absence (e.g. "LangChain", "academic lab").
+      - COMPANY_NAME_MATCH: checks career_history[].company against a
+        named list (e.g. consulting firms).
+      - TENURE_PATTERN: checks duration_months / is_current patterns
+        across career_history (e.g. frequent short stints = hopping).
+      - CURRENT_TITLE_KEYWORD: checks profile.current_title specifically,
+        distinct from career history (e.g. honeypot title mismatch).
+      - PLATFORM_ACTIVITY: checks redrob_signals fields related to
+        platform engagement (last_active_date, open_to_work_flag, etc).
+      - LOCATION_RELOCATION: checks profile.country / location and
+        redrob_signals.willing_to_relocate.
+      - SKILL_OR_DOMAIN_BALANCE: checks for the presence of one keyword
+        group without a corroborating second keyword group (e.g. CV/speech
+        keywords present without NLP/IR keywords — the "wrong domain"
+        pattern), expressed generically via primary_keywords vs
+        corroborating_keywords rather than one bespoke function per
+        domain pair.
+      - TITLE_DESCRIPTION_CONSISTENCY: checks whether a role's own title
+        is semantically consistent with that SAME role's own description
+        (the "Marketing Manager with AI keywords" honeypot pattern named
+        explicitly in this JD's text).
+      - UNRESOLVED: the model could not map this condition to any of the
+        above. The rule is kept (never silently dropped) but flagged for
+        human review and excluded from automatic pruning/penalty — see
+        config_loader's handling.
+    """
+    CAREER_INDUSTRY_MATCH = "career_industry_match"
+    CAREER_TITLE_KEYWORD = "career_title_keyword"
+    CAREER_TEXT_KEYWORD = "career_text_keyword"
+    COMPANY_NAME_MATCH = "company_name_match"
+    TENURE_PATTERN = "tenure_pattern"
+    CURRENT_TITLE_KEYWORD = "current_title_keyword"
+    PLATFORM_ACTIVITY = "platform_activity"
+    LOCATION_RELOCATION = "location_relocation"
+    SKILL_OR_DOMAIN_BALANCE = "skill_or_domain_balance"
+    TITLE_DESCRIPTION_CONSISTENCY = "title_description_consistency"
+    UNRESOLVED = "unresolved"
+
+
+class QuantifierType(str, Enum):
+    """How a rule applies across a list field like career_history.
+
+    career_history is a list, so a rule targeting it must say whether it
+    means "true for ANY role", "true for ALL roles", or "true for the
+    CURRENT role only" — without this, a compiled rule like
+    "career_history.title contains X" is structurally ambiguous and
+    cannot be mechanically executed (this was the exact failure found
+    when auditing target_field_path values against the real schema).
+    """
+    ANY_ROLE = "any_role"
+    ALL_ROLES = "all_roles"
+    CURRENT_ROLE_ONLY = "current_role_only"
+    NOT_APPLICABLE = "not_applicable"
 
 
 class HardDisqualifier(BaseModel):
     condition_name: str
-    target_field_path: str
-    check_operator: str
-    rejection_value: str
-    traceability: TraceableQuote
+    rule_type: RuleType = RuleType.UNRESOLVED
+    applies_to: QuantifierType = QuantifierType.NOT_APPLICABLE
+    primary_keywords: List[str] = Field(default_factory=list)
+    corroborating_keywords: List[str] = Field(default_factory=list)
+    named_values: List[str] = Field(default_factory=list)
+    numeric_threshold: Optional[float] = None
+    # Legacy fields kept for backward compatibility with older compiled
+    # configs and for human-readable logging; no pipeline stage should
+    # branch on these two going forward.
+    target_field_path: str = ""
+    check_operator: str = ""
+    rejection_value: str = ""
+    traceability: TraceableQuote = Field(default_factory=TraceableQuote)
 
 
 class SoftDisqualifier(BaseModel):
     condition_name: str
-    target_field_path: str
-    penalty_weight: float = Field(..., ge=0.0, le=1.0)
+    rule_type: RuleType = RuleType.UNRESOLVED
+    applies_to: QuantifierType = QuantifierType.NOT_APPLICABLE
+    primary_keywords: List[str] = Field(default_factory=list)
+    corroborating_keywords: List[str] = Field(default_factory=list)
+    named_values: List[str] = Field(default_factory=list)
+    numeric_threshold: Optional[float] = None
+    penalty_weight: float = Field(default=0.5, ge=0.0, le=1.0)
     escape_clause_condition: Optional[str] = None
-    has_escape_hatch: bool
-    traceability: TraceableQuote
+    escape_rule_type: RuleType = RuleType.UNRESOLVED
+    escape_keywords: List[str] = Field(default_factory=list)
+    has_escape_hatch: bool = False
+    # Legacy fields, same note as above.
+    target_field_path: str = ""
+    traceability: TraceableQuote = Field(default_factory=TraceableQuote)
 
 
 class PositiveEvidenceRequirement(BaseModel):
     requirement_name: str
     evidence_proof_expectations: List[str]
     is_mandatory_tier1: bool
-    traceability: TraceableQuote
+    matching_keywords: List[str] = Field(default_factory=list)
+    traceability: TraceableQuote = Field(default_factory=TraceableQuote)
 
 
 class Pass1Schema(BaseModel):
@@ -85,14 +178,6 @@ class Pass3Schema(BaseModel):
     generalist_vs_specialist: int = Field(default=5, ge=1, le=10)
     jd_ambiguity_score: int = Field(default=5, ge=1, le=10)
     raw_text_mention_counts: Dict[str, int] = Field(default_factory=dict)
-
-
-class CompiledConfig(BaseModel):
-    meta: Dict[str, Any]
-    constraints: Dict[str, Any]
-    semantic_targets: Dict[str, Any]
-    behavioral_priorities: Dict[str, Any]
-    normalized_fusion_weights: Dict[str, float]
 
 
 # ---------------------------------------------------------------------------

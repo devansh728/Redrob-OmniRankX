@@ -2,49 +2,137 @@
 config_loader.py — builds a RuntimeConfig object that the 5-stage ranking
 pipeline (pruner / semantic / trajectory / behavioral / fusion) reads from.
 
-Changes from the previous version:
-- Reads the new fields produced by the fixed compile_jd.py: hard_disqualifiers,
-  soft_disqualifiers (with escape hatches), tier1/tier2 evidence, and the
-  anti_personas list. The previous loader only read blacklist_firms and
-  jd_query — everything else the compiler now extracts was being silently
-  ignored downstream even when extraction itself worked correctly.
-- Falls back gracefully field-by-field rather than all-or-nothing: if
-  generated_config.json exists but is missing a key the compiler used to
-  produce in an older format, RuntimeConfig still loads with sane defaults
-  for that one key instead of discarding the whole compiled config.
-- Builds JD_QUERY from tier1_mandatory_evidence if a compiled config is
-  present, instead of relying on a separately-stored jd_query string that
-  can fall out of sync with the structured evidence it was supposedly
-  derived from.
+WHAT'S FIXED IN THIS VERSION, on top of the prior one:
+
+1. JD_SKILL_WEIGHTS was a confirmed dead code path. Nothing populated it
+   from the compiled config — it only ever came from a static settings.py
+   default (empty dict). This meant semantic.py's skill_assessment_scores
+   RRF input silently contributed 0.0 for every candidate, every run, with
+   no error or warning. Fixed by deriving JD_SKILL_WEIGHTS from
+   tier1/tier2 evidence's requirement_name + evidence_proof_expectations
+   text, building a list of (keyword, weight) pairs rather than a fixed
+   dict — because skill_assessment_scores keys are CANDIDATE DATA (e.g.
+   "FAISS", "Fine-tuning LLMs", "Pinecone"), not something the compiler can
+   know in advance. semantic.py now does substring matching against each
+   candidate's own actual keys using these weighted keyword phrases.
+   Tier-1 (mandatory) evidence is weighted higher than tier-2 (preferred),
+   preserving the distinction the compiler computed and the prior loader
+   threw away by flattening both tiers into one string.
+
+2. rule_type pass-through: HARD_DISQUALIFIERS / SOFT_DISQUALIFIERS are
+   now expected to carry the new rule_type/applies_to/primary_keywords/
+   etc fields from the updated compile_jd.py. This loader does NOT
+   validate or reshape them — it passes the dicts through as-is, and
+   pipeline.rule_engine.evaluate_rule() is solely responsible for
+   interpreting rule_type. This keeps the loader simple and means a
+   schema change in jd_schemas.py only requires updating rule_engine.py,
+   not this file.
+
+3. Backward compatibility: an older compiled config with no rule_type
+   field on its disqualifiers still loads without crashing — each rule
+   dict simply won't have "rule_type", and rule_engine.evaluate_rule()
+   treats a missing rule_type the same as "unresolved" (see
+   rule_engine.py's .get("rule_type", "unresolved") default), so old
+   configs degrade to "no disqualifiers actively applied" rather than
+   raising — visible via the printed unresolved-rule warning in
+   pruner.py/behavioral.py, not a silent failure.
 """
 
 import os
+import re
 import json
 from config import settings
+
+
+# Generic English stopwords stripped when deriving skill keywords from
+# evidence text — this list is domain-agnostic on purpose, since the
+# evidence text itself varies completely per JD.
+_GENERIC_STOPWORDS = {
+    "a", "an", "the", "and", "or", "with", "for", "to", "of", "in", "on",
+    "at", "by", "from", "is", "are", "be", "this", "that", "experience",
+    "production", "real", "users", "deployed", "scale", "meaningful",
+    "has", "have", "having", "such", "as", "similar", "or", "etc",
+}
+
+
+def _derive_skill_keywords_from_evidence(evidence_items: list, base_weight: float) -> list:
+    """Turns a list of tier1/tier2 evidence dicts into weighted keyword
+    phrases usable for substring matching against candidate skill names.
+
+    Input: list of evidence dicts (each with requirement_name and
+           evidence_proof_expectations), a base importance weight.
+    Output: list of (keyword_phrase, weight) tuples.
+    How it works: pulls out multi-word capitalized-or-technical-looking
+            phrases and standalone technical tokens from both
+            requirement_name and evidence_proof_expectations, filters
+            generic stopwords, and pairs each surviving phrase with the
+            given base_weight. Phrases are kept short (1-3 words) since
+            that is what's most likely to substring-match a candidate's
+            actual skill_assessment_scores key (e.g. "Fine-tuning LLMs",
+            "Pinecone", "FAISS").
+    """
+    keywords = []
+    for item in evidence_items:
+        texts = [item.get("requirement_name", "")] + (item.get("evidence_proof_expectations") or [])
+        for text in texts:
+            if not text:
+                continue
+            # Extract candidate phrases: parenthesized lists (common JD
+            # pattern: "Pinecone, Weaviate, Qdrant, ...") split on commas;
+            # otherwise fall back to extracting individual capitalized or
+            # technical-looking tokens.
+            paren_groups = re.findall(r"\(([^)]+)\)", text)
+            for group in paren_groups:
+                for piece in group.split(","):
+                    piece = piece.strip().rstrip(".")
+                    if piece and piece.lower() not in _GENERIC_STOPWORDS and len(piece) > 1:
+                        keywords.append(piece)
+
+            # Also pull standalone technical-looking words (mixed case,
+            # all-caps acronyms, or hyphenated terms) from the rest of the
+            # text, which catches things like "Strong Python" ->
+            # "Python", or "Fine-tuning LLMs" -> kept whole since it's a
+            # short multi-word phrase already.
+            words = re.findall(r"\b[A-Za-z][A-Za-z0-9+\-]{1,}\b", text)
+            for w in words:
+                if w.lower() in _GENERIC_STOPWORDS or len(w) <= 2:
+                    continue
+                if w[0].isupper() or w.isupper():
+                    keywords.append(w)
+
+    seen = set()
+    out = []
+    for kw in keywords:
+        key = kw.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append((kw, base_weight))
+    return out
 
 
 class RuntimeConfig:
     def __init__(self, config_dict: dict | None = None):
         self.config_dict = config_dict or {}
 
-        # --- Static defaults (used when no compiled config is present, or
-        # as a per-field fallback when the compiled config is missing a key) ---
+        # --- Static defaults ---
         self.STAGE2_TOP_K = getattr(settings, "STAGE2_TOP_K", 1000)
         self.FINAL_TOP_N = getattr(settings, "FINAL_TOP_N", 100)
-        self.SALARY_BUDGET_MAX_LPA = getattr(settings, "SALARY_BUDGET_MAX_LPA", 60.0)
+        self.SALARY_BUDGET_MAX_LPA = getattr(settings, "SALARY_BUDGET_MAX_LPA", 0.0)
         self.PREFERRED_CITIES = list(getattr(settings, "PREFERRED_CITIES", []))
         self.SERVICES_FIRMS = set(getattr(settings, "SERVICES_FIRMS", []))
         self.SCORE_WEIGHTS = dict(getattr(settings, "SCORE_WEIGHTS", {
             "semantic": 0.35, "trajectory": 0.25, "behavioral": 0.25, "logistics": 0.15,
         }))
         self.JD_QUERY = getattr(settings, "JD_QUERY", "")
-        self.JD_SKILL_WEIGHTS = dict(getattr(settings, "JD_SKILL_WEIGHTS", {}))
+        # JD_SKILL_WEIGHTS is now a list of (keyword, weight) tuples, not a
+        # flat dict keyed by exact skill name — see module docstring.
+        self.JD_SKILL_WEIGHTS: list[tuple] = list(getattr(settings, "JD_SKILL_WEIGHTS", []))
         self.MIN_YEARS_EXPERIENCE = 0.0
         self.MAX_YEARS_EXPERIENCE = 20.0
         self.MAX_NOTICE_PERIOD_DAYS = 90
         self.WILLING_TO_RELOCATE_REQUIRED = False
 
-        # --- New fields populated only from a compiled config ---
         self.HARD_DISQUALIFIERS: list[dict] = []
         self.SOFT_DISQUALIFIERS: list[dict] = []
         self.TIER1_MANDATORY_EVIDENCE: list[dict] = []
@@ -65,7 +153,6 @@ class RuntimeConfig:
         if fusion_weights:
             self.SCORE_WEIGHTS.update(fusion_weights)
 
-        # --- Constraints (Pass 2 output) ---
         if "min_years_experience" in constraints:
             self.MIN_YEARS_EXPERIENCE = float(constraints["min_years_experience"])
         if "max_years_experience" in constraints:
@@ -81,43 +168,29 @@ class RuntimeConfig:
 
         preferred_cities = constraints.get("preferred_cities") or []
         if preferred_cities:
-            # Union rather than replace — a hand-curated static list in
-            # settings.py (e.g. known ML hub cities) should not be erased
-            # by a compiled config that only found a subset of cities.
             self.PREFERRED_CITIES = list({*self.PREFERRED_CITIES, *preferred_cities})
 
-        hard_disqualifiers = constraints.get("hard_disqualifiers") or []
-        self.HARD_DISQUALIFIERS = hard_disqualifiers
+        # Hard/soft disqualifiers are passed through as-is; rule_engine.py
+        # is the sole interpreter of rule_type. See module docstring point 2.
+        self.HARD_DISQUALIFIERS = constraints.get("hard_disqualifiers") or []
+        self.SOFT_DISQUALIFIERS = constraints.get("soft_disqualifiers") or []
 
-        soft_disqualifiers = constraints.get("soft_disqualifiers") or []
-        self.SOFT_DISQUALIFIERS = soft_disqualifiers
-
-        # Services-firm blacklist is derived from soft_disqualifiers whose
-        # target_field_path mentions "company" or "career_history" and
-        # whose rejection_value-equivalent names known services firms —
-        # rather than relying on a separate, possibly-empty blacklist_firms
-        # field the way the previous loader did.
+        # Services-firm set: prefer named_values from any company_name_match
+        # rule (the structured, schema-grounded source), falling back to
+        # the legacy free-text scan only if no structured rule provided one.
         derived_firms = set()
-        for d in soft_disqualifiers:
-            condition_name = (d.get("condition_name") or "").lower()
-            quote = (d.get("traceability", {}) or {}).get("verbatim_text_quote", "").lower()
-            if "consulting" in condition_name or "services" in condition_name or "consulting" in quote:
-                # Pull out capitalized company-like tokens from the quote
-                # as a best-effort fallback if the compiler didn't already
-                # break them into a structured list.
-                import re
-                derived_firms.update(re.findall(r"\b[A-Z][a-zA-Z]{2,}\b", quote.title()))
+        for d in self.HARD_DISQUALIFIERS + self.SOFT_DISQUALIFIERS:
+            if d.get("rule_type") == "company_name_match":
+                derived_firms.update(d.get("named_values") or [])
         if derived_firms:
             self.SERVICES_FIRMS = self.SERVICES_FIRMS.union(derived_firms)
-
-        # Backward-compat: older compiled configs used "blacklist_firms"
-        legacy_blacklist = constraints.get("blacklist_firms") or []
-        if legacy_blacklist:
-            self.SERVICES_FIRMS = self.SERVICES_FIRMS.union(set(legacy_blacklist))
+        else:
+            legacy_blacklist = constraints.get("blacklist_firms") or []
+            if legacy_blacklist:
+                self.SERVICES_FIRMS = self.SERVICES_FIRMS.union(set(legacy_blacklist))
 
         bounded_expansions = constraints.get("bounded_concept_expansions") or []
 
-        # --- Semantic targets (Pass 1 output) ---
         self.BUSINESS_INTENT = semantic_targets.get("business_intent", "")
         self.PRIMARY_PERSONA = semantic_targets.get("primary_persona", "")
         self.ANTI_PERSONAS = semantic_targets.get("anti_personas") or []
@@ -127,11 +200,6 @@ class RuntimeConfig:
         self.TIER1_MANDATORY_EVIDENCE = tier1
         self.TIER2_PREFERRED_EVIDENCE = tier2
 
-        # Build JD_QUERY from structured evidence rather than trusting a
-        # separately stored string. Mandatory evidence is weighted into the
-        # query more heavily by simple repetition-free inclusion; legacy
-        # configs that only have a flat "jd_query" string still work via
-        # the fallback below.
         if tier1 or tier2:
             requirement_names = [e.get("requirement_name", "") for e in tier1 if e.get("requirement_name")]
             requirement_names += [e.get("requirement_name", "") for e in tier2 if e.get("requirement_name")]
@@ -139,10 +207,41 @@ class RuntimeConfig:
                 p for e in (tier1 + tier2)
                 for p in (e.get("evidence_proof_expectations") or [])
             ]
-            query_parts = [self.PRIMARY_PERSONA] + requirement_names + proof_terms + bounded_expansions
+            mandatory_repeated = requirement_names[: len(tier1)] * 2
+            query_parts = [self.PRIMARY_PERSONA] + mandatory_repeated + requirement_names + proof_terms + bounded_expansions
             self.JD_QUERY = " ".join(part for part in query_parts if part).strip()
         elif semantic_targets.get("jd_query"):
             self.JD_QUERY = semantic_targets["jd_query"]
+
+        # JD_SKILL_WEIGHTS: derive weighted keyword phrases from tier1
+        # (weight 1.0) and tier2 (weight 0.5) evidence, fixing the
+        # previously-dead skill_assessment_scores RRF input. See module
+        # docstring point 1.
+        #
+        # IMPORTANT LIMITATION, stated plainly rather than glossed over:
+        # this keyword-substring approach reliably catches named tools
+        # written verbatim in the JD (Pinecone, FAISS, Weaviate) because
+        # those are extracted from parenthesized lists. It does NOT
+        # reliably catch conceptual skill names that the JD describes in
+        # prose rather than naming directly (e.g. the JD says
+        # "fine-tuning" as a capability, but a candidate's skill is named
+        # "Fine-tuning LLMs" — these only coincidentally overlap on the
+        # word "LLMs"). bounded_concept_expansions is added as a second
+        # source specifically because the compiler populates it with
+        # broader conceptual terms beyond verbatim JD text, which closes
+        # some of this gap, but this remains an approximate, not exact,
+        # mechanism. semantic.py's substring matching is deliberately
+        # permissive (partial overlap counts) rather than exact-key-match,
+        # which is the right tradeoff for an approximate signal: a missed
+        # match contributes 0 (safe default), never a false negative that
+        # actively penalizes a candidate.
+        tier1_keywords = _derive_skill_keywords_from_evidence(tier1, base_weight=1.0)
+        tier2_keywords = _derive_skill_keywords_from_evidence(tier2, base_weight=0.5)
+        expansion_keywords = [
+            (term, 0.6) for term in bounded_expansions
+            if term and term.lower() not in _GENERIC_STOPWORDS
+        ]
+        self.JD_SKILL_WEIGHTS = tier1_keywords + tier2_keywords + expansion_keywords
 
         behavioral_priorities = data.get("behavioral_priorities") or {}
         if behavioral_priorities:
