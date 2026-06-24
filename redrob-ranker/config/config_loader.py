@@ -52,6 +52,7 @@ class RuntimeConfig:
         self.ANTI_PERSONAS: list[str] = []
         self.BUSINESS_INTENT = ""
         self.PRIMARY_PERSONA = ""
+        self.BEHAVIORAL_PRIORITIES: dict = {}
 
         if self.config_dict:
             self._apply_compiled_config(self.config_dict)
@@ -62,9 +63,6 @@ class RuntimeConfig:
         fusion_weights = data.get("normalized_fusion_weights", {}) or {}
 
         if fusion_weights:
-            # Only overwrite weights the compiled config actually provides;
-            # keep static defaults for anything missing rather than zeroing
-            # out a weight the compiler didn't return.
             self.SCORE_WEIGHTS.update(fusion_weights)
 
         # --- Constraints (Pass 2 output) ---
@@ -74,8 +72,10 @@ class RuntimeConfig:
             self.MAX_YEARS_EXPERIENCE = float(constraints["max_years_experience"])
         if "max_notice_period_days" in constraints:
             self.MAX_NOTICE_PERIOD_DAYS = int(constraints["max_notice_period_days"])
-        if "max_salary_budget_lpa" in constraints and constraints["max_salary_budget_lpa"]:
-            self.SALARY_BUDGET_MAX_LPA = float(constraints["max_salary_budget_lpa"])
+        if "max_salary_budget_lpa" in constraints:
+            raw_salary = float(constraints["max_salary_budget_lpa"])
+            if raw_salary > 0.0:
+                self.SALARY_BUDGET_MAX_LPA = raw_salary
         if "willing_to_relocate_required" in constraints:
             self.WILLING_TO_RELOCATE_REQUIRED = bool(constraints["willing_to_relocate_required"])
 
@@ -143,6 +143,10 @@ class RuntimeConfig:
             self.JD_QUERY = " ".join(part for part in query_parts if part).strip()
         elif semantic_targets.get("jd_query"):
             self.JD_QUERY = semantic_targets["jd_query"]
+
+        behavioral_priorities = data.get("behavioral_priorities") or {}
+        if behavioral_priorities:
+            self.BEHAVIORAL_PRIORITIES = behavioral_priorities
 
 
 def load_runtime_config(config_path: str | None = None) -> RuntimeConfig:

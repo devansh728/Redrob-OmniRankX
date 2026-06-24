@@ -4,7 +4,11 @@ import time
 import csv
 from pipeline import loader, pruner, semantic, trajectory, behavioral, fusion
 from config.config_loader import load_runtime_config
-settings = load_runtime_config()
+
+_proj_root = os.path.dirname(os.path.abspath(__file__))
+_debug_config = os.path.join(_proj_root, "config", "generated_config_new_FAILED_DEBUG.json")
+settings = load_runtime_config(_debug_config if os.path.exists(_debug_config) else None)
+
 
 def main():
     start_time = time.time()

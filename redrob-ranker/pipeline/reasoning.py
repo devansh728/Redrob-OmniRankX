@@ -1,16 +1,28 @@
 from utils.date_utils import parse_date, REFERENCE_TODAY
 
-def build_reasoning(candidate, rank):
+def build_reasoning(candidate, rank, config=None):
     signals = candidate.get("redrob_signals", {})
     
     reasons = []
     
     sem = candidate.get("semantic_score", 0.0)
+    persona = getattr(config, "PRIMARY_PERSONA", "") if config else ""
     if sem > 0.75:
-        reasons.append("Strong semantic match for ML/IR role.")
+        if persona:
+            reasons.append(f"Strong semantic match for {persona}.")
+        else:
+            reasons.append("Strong semantic match for ML/IR role.")
+        
+    shipper = 5
+    if config and hasattr(config, "BEHAVIORAL_PRIORITIES"):
+        shipper = config.BEHAVIORAL_PRIORITIES.get("shipper_vs_researcher", 5)
+        
+    traj_threshold = 0.7
+    if shipper > 5:
+        traj_threshold = 0.65
         
     traj = candidate.get("trajectory_score", 0.0)
-    if traj > 0.7:
+    if traj > traj_threshold:
         reasons.append("Deep product-company career arc.")
         
     last_act_str = signals.get("last_active_date")

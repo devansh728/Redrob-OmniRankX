@@ -17,7 +17,7 @@ Design notes (read before editing):
   merge_pass3 below, rather than reassembling chunks into one giant prompt.
 """
 
-from typing import List, Optional, Dict
+from typing import List, Optional, Dict, Any
 from pydantic import BaseModel, Field, field_validator
 
 
@@ -85,6 +85,14 @@ class Pass3Schema(BaseModel):
     generalist_vs_specialist: int = Field(default=5, ge=1, le=10)
     jd_ambiguity_score: int = Field(default=5, ge=1, le=10)
     raw_text_mention_counts: Dict[str, int] = Field(default_factory=dict)
+
+
+class CompiledConfig(BaseModel):
+    meta: Dict[str, Any]
+    constraints: Dict[str, Any]
+    semantic_targets: Dict[str, Any]
+    behavioral_priorities: Dict[str, Any]
+    normalized_fusion_weights: Dict[str, float]
 
 
 # ---------------------------------------------------------------------------

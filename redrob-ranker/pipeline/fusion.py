@@ -53,6 +53,6 @@ def run(candidates, config):
     for idx, c in enumerate(results):
         rank = idx + 1
         c["rank"] = rank
-        c["reasoning"] = build_reasoning(c, rank)
+        c["reasoning"] = build_reasoning(c, rank, config=config)
 
     return results

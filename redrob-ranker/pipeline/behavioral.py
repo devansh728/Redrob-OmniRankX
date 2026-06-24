@@ -54,6 +54,10 @@ def run(candidates, config):
         
         sal_score = salary_fit(signals.get("expected_salary_range_inr_lpa"), config.SALARY_BUDGET_MAX_LPA)
         
+        oar = signals.get("offer_acceptance_rate")
+        if oar is None or oar == -1:
+            oar = 0.5
+
         comp = (
             r_score * 0.25 +
             resp_rate * 0.25 +
@@ -66,6 +70,49 @@ def run(candidates, config):
         if signals.get("open_to_work_flag") is True:
             comp = comp * 1.2
             
-        c["behavioral_score"] = float(min(1.0, max(0.0, comp)))
+        behavioral_score = min(1.0, max(0.0, comp))
+        
+        text = c.get("precomputed_career_text", "").lower()
+        for sd in getattr(config, "SOFT_DISQUALIFIERS", []):
+            cond = sd.get("condition_name", "")
+            penalty = float(sd.get("penalty_weight", 0.0))
+            if penalty <= 0.0:
+                continue
+            
+            trigger = False
+            if cond == "Bounce Between Startups":
+                history = c.get("career_history", [])
+                has_startup = any(j.get("company_size") in ["1-10", "11-50"] for j in history)
+                has_bigtech = any(any(kw in j.get("company", "").lower() for kw in ["google", "meta"]) for j in history)
+                if has_startup and not has_bigtech:
+                    trigger = True
+            elif cond == "architecture_or_tech_lead_experience":
+                has_hr_tech = any(kw in text for kw in ["hr-tech", "hr tech", "recruiting tech", "marketplace"])
+                if has_hr_tech:
+                    trigger = True
+            elif cond == "Computer vision, speech, or robotics":
+                cv_keywords = ["vision", "image", "video", "speech", "audio", "voice", "robot", "control", "autonomous", "lidar", "sensor"]
+                nlp_keywords = ["nlp", "natural language", "text", "information retrieval", "search", "retrieval", "ranking", "embedding", "vector", "llm", "language model", "transformer", "bert", "rag"]
+                has_cv = any(kw in text for kw in cv_keywords)
+                has_nlp = any(kw in text for kw in nlp_keywords)
+                if has_cv and not has_nlp:
+                    trigger = True
+            elif cond == "NoRedrobPlatform":
+                is_active = (signals.get("open_to_work_flag") is True) or (signals.get("applications_submitted_30d", 0) > 0)
+                if not is_active:
+                    trigger = True
+            elif cond == "Inactive_Candidate":
+                d_active = parse_date(signals.get("last_active_date"))
+                days = (REFERENCE_TODAY - d_active).days if d_active else 999
+                r_rate = signals.get("recruiter_response_rate")
+                if r_rate is None or r_rate == -1:
+                    r_rate = 0.5
+                if days > 180 and r_rate < 0.15:
+                    trigger = True
+            
+            if trigger:
+                behavioral_score = behavioral_score * (1.0 - penalty)
+                
+        c["behavioral_score"] = float(min(1.0, max(0.0, behavioral_score)))
         
     return candidates
