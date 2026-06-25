@@ -153,13 +153,7 @@ def run_ranking(file_obj, config_choice: str, custom_config_file):
 # ------------------------------------------------------------------
 # Gradio UI
 # ------------------------------------------------------------------
-custom_theme = gr.themes.Monochrome(
-    primary_hue="indigo",
-    secondary_hue="blue",
-    neutral_hue="slate",
-    radius_size=gr.themes.sizes.radius_sm,
-    font=[gr.themes.GoogleFont("Inter"), "ui-sans-serif", "system-ui", "sans-serif"],
-)
+custom_theme = gr.themes.Monochrome()
 
 with gr.Blocks(
     theme=custom_theme,
@@ -202,10 +196,10 @@ with gr.Blocks(
                     info="Select a pre-compiled JD config.",
                 )
                 with gr.Accordion("Advanced: Custom JD Config", open=False):
+                    gr.Markdown("*Overrides the dropdown selection above.*")
                     custom_config_input = gr.File(
                         label="Upload Custom Config (JSON)",
-                        file_types=[".json"],
-                        info="Overrides the dropdown selection."
+                        file_types=[".json"]
                     )
         
         with gr.Row():
