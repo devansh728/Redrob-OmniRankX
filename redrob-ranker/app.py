@@ -153,7 +153,7 @@ def run_ranking(file_obj, config_choice: str, custom_config_file):
 # Gradio UI
 # ------------------------------------------------------------------
 with gr.Blocks(
-    theme=gr.themes.Monochrome(primary_hue="indigo", neutral_hue="slate"),
+    theme=gr.themes.Soft(),
     title="OmniRank-X - Candidate Ranking",
 ) as demo:
 
