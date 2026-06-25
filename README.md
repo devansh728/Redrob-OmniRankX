@@ -1,3 +1,15 @@
+---
+title: OmniRank-X
+emoji: 🎯
+colorFrom: indigo
+colorTo: purple
+sdk: gradio
+sdk_version: 4.21.0
+app_file: redrob-ranker/app.py
+pinned: true
+license: mit
+---
+
 # OmniRank-X
 
 ## Setup
