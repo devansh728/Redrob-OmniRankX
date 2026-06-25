@@ -6,7 +6,7 @@ rank-bm25==0.2.2
 tqdm==4.66.2
 numpy==1.26.4
 gradio==4.44.1
-huggingface_hub>=0.23.0
+huggingface_hub>=0.23.0,<1.0.0
 transformers>=4.39.0
 pandas>=2.0.0
 onnxscript==0.7.0
