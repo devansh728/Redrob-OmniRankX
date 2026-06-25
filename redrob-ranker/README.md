@@ -1,3 +1,15 @@
+---
+title: OmniRank-X
+emoji: 🎯
+colorFrom: indigo
+colorTo: purple
+sdk: gradio
+sdk_version: 4.21.0
+app_file: app.py
+pinned: true
+license: mit
+---
+
 # OmniRank-X — Intelligent Candidate Discovery & Ranking
 
 **Redrob Hackathon Sandbox** · 5-stage CPU-only candidate ranking pipeline.
