@@ -1,0 +1,38 @@
+# Large data files — too big for HF Spaces git repo
+data/
+!data/.gitkeep
+
+# Model weights — committed to Space repo via Git LFS for zero cold-start
+# Only the quantised ONNX model that belongs in the Space is tracked.
+# Any other directories under models/ (e.g. raw FP32 checkpoints) are ignored.
+models/*
+!models/bge-small-en-v1.5-int8/
+!models/.gitkeep
+
+# Pipeline outputs
+outputs/
+!outputs/.gitkeep
+
+# Debug / failed configs
+config/generated_config_new_FAILED_DEBUG.json
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+*.egg-info/
+dist/
+build/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp

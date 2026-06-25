@@ -30,9 +30,64 @@ from rank_bm25 import BM25Okapi
 from utils.text_utils import concat_career_text, tokenize_for_bm25
 
 
-def load_embedder(model_dir="models/bge-small-en-v1.5-int8"):
-    tokenizer = AutoTokenizer.from_pretrained(model_dir)
-    session = ort.InferenceSession(os.path.join(model_dir, "model.onnx"))
+_HF_ONNX_REPO = "optimum/bge-small-en-v1.5"
+_TMP_MODEL_CACHE = "/tmp/models/bge-small-en-v1.5-int8"
+
+
+def load_embedder(model_dir=None):
+    """Loads the ONNX INT8 bge-small embedder.
+
+    Resolution order (first working path wins):
+      1. Explicit model_dir argument (if given and contains model.onnx).
+      2. models/bge-small-en-v1.5-int8/ relative to the project root —
+         the committed, Git-LFS-tracked copy baked into the Space repo.
+         This is the expected path for the deployed HF Space and gives
+         zero cold-start download time.
+      3. /tmp/models/ cache — used when running in an ephemeral environment
+         where the LFS files were not pulled (rare in normal Space operation).
+      4. HuggingFace Hub snapshot_download — last resort if all local paths
+         are missing.  Adds ~30-45 s on first cold start.
+
+    Input:  optional explicit path to a local ONNX model directory.
+    Output: (AutoTokenizer, onnxruntime.InferenceSession) tuple, or
+            (None, None) if all resolution attempts fail.
+    """
+    # Resolve the project-root-relative default path (works regardless of cwd).
+    proj_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+    committed_dir = os.path.join(proj_root, "models", "bge-small-en-v1.5-int8")
+
+    # Determine which directory to try loading from.
+    if model_dir and os.path.isfile(os.path.join(model_dir, "model.onnx")):
+        resolved_dir = model_dir
+    elif os.path.isfile(os.path.join(committed_dir, "model.onnx")):
+        # Happy path: model is committed to the Space repo via Git LFS.
+        resolved_dir = committed_dir
+    elif os.path.isfile(os.path.join(_TMP_MODEL_CACHE, "model.onnx")):
+        # /tmp cache from a previous container run.
+        resolved_dir = _TMP_MODEL_CACHE
+    else:
+        # Last resort: download from HF Hub.
+        try:
+            from huggingface_hub import snapshot_download
+            print(f"[semantic] model.onnx not found locally. "
+                  f"Downloading {_HF_ONNX_REPO} from HuggingFace Hub ...")
+            snapshot_download(
+                repo_id=_HF_ONNX_REPO,
+                local_dir=_TMP_MODEL_CACHE,
+                ignore_patterns=["*.msgpack", "*.h5", "flax_*", "*.pt", "*.bin"],
+            )
+            print(f"[semantic] Model downloaded to {_TMP_MODEL_CACHE}")
+            resolved_dir = _TMP_MODEL_CACHE
+        except Exception as e:
+            print(f"[semantic] WARNING: could not download model: {e}. "
+                  "Embedding will be skipped (BM25 + skills only).")
+            return None, None
+
+    tokenizer = AutoTokenizer.from_pretrained(resolved_dir)
+    session = ort.InferenceSession(
+        os.path.join(resolved_dir, "model.onnx"),
+        providers=["CPUExecutionProvider"],
+    )
     return tokenizer, session
 
 

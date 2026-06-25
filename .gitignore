@@ -3,7 +3,9 @@
 .project_state_context.md
 __pycache__/
 .pytest_cache/
-redrob-ranker/models/
+redrob-ranker/models/*
+!redrob-ranker/models/bge-small-en-v1.5-int8/
+!redrob-ranker/models/.gitkeep
 redrob-ranker/outputs/
 redrob-ranker/.venv/
 *.pyc
