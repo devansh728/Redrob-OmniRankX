@@ -79,8 +79,9 @@ def run_ranking(file_obj, config_choice: str, custom_config_file):
         candidates = loader.load_all(file_path)
         import polars as pl
         if isinstance(candidates, pl.LazyFrame):
-            candidates = candidates.collect().to_dicts()
-        total_loaded = len(candidates)
+            total_loaded = candidates.select(pl.len()).collect().item()
+        else:
+            total_loaded = len(candidates)
         logs.append(f"Stage 0 - Loaded {total_loaded} candidates in {time.time()-t0:.2f}s")
 
         # Stage 1 - Prune
@@ -152,69 +153,91 @@ def run_ranking(file_obj, config_choice: str, custom_config_file):
 # ------------------------------------------------------------------
 # Gradio UI
 # ------------------------------------------------------------------
+custom_theme = gr.themes.Monochrome(
+    primary_hue="indigo",
+    secondary_hue="blue",
+    neutral_hue="slate",
+    radius_size=gr.themes.sizes.radius_sm,
+    font=[gr.themes.GoogleFont("Inter"), "ui-sans-serif", "system-ui", "sans-serif"],
+)
+
 with gr.Blocks(
-    theme=gr.themes.Soft(),
-    title="OmniRank-X - Candidate Ranking",
+    theme=custom_theme,
+    title="OmniRank-X | AI Candidate Ranking",
+    css="""
+    .container { max-width: 1200px; margin: auto; }
+    .header-text { text-align: center; margin-bottom: 2rem; padding-top: 2rem; }
+    .header-text h1 { color: var(--primary-600); font-weight: 800; font-size: 2.5rem; letter-spacing: -0.025em; }
+    .header-text p { color: var(--body-text-color-subdued); font-size: 1.1rem; }
+    .output-log { font-family: monospace; font-size: 0.9rem; }
+    .file-upload { border: 2px dashed var(--border-color-primary); border-radius: var(--radius-lg); }
+    """
 ) as demo:
-
-    gr.Markdown(
-        """
-        # OmniRank-X - Intelligent Candidate Discovery & Ranking
-        Upload a candidate JSON / JSONL file (up to ~100 candidates for the sandbox demo).
-        The full 5-stage pipeline runs entirely on CPU with no internet access during ranking.
-        """
-    )
-
-    with gr.Row():
-        with gr.Column(scale=2):
-            file_input = gr.File(
-                label="Upload Candidates (.json, .jsonl, or .jsonl.gz)",
-                file_types=[".json", ".jsonl", ".gz"],
-            )
-        with gr.Column(scale=1):
-            config_dropdown = gr.Dropdown(
-                choices=list(_BUILTIN_CONFIGS.keys()),
-                value=_DEFAULT_CONFIG_LABEL,
-                label="Built-in Config",
-                info="Select the pre-compiled JD config to use.",
-            )
-            custom_config_input = gr.File(
-                label="Or upload a custom config JSON (overrides dropdown)",
-                file_types=[".json"],
-            )
-
-    run_btn = gr.Button("Run Ranking Pipeline", variant="primary", size="lg")
-
-    log_output = gr.Textbox(
-        label="Pipeline Logs & Status",
-        lines=8,
-        max_lines=14,
-        interactive=False,
-    )
-
-    with gr.Row():
-        table_output = gr.DataFrame(
-            label="Ranked Candidates (up to Top 100)",
-            wrap=True,
+    with gr.Column(elem_classes="container"):
+        gr.Markdown(
+            """
+            <div class="header-text">
+                <h1>OmniRank-X</h1>
+                <p>Intelligent Candidate Discovery & Ranking Pipeline</p>
+            </div>
+            """
         )
-
-    file_output = gr.File(label="Download Submission CSV")
+        
+        with gr.Row():
+            with gr.Column(scale=2):
+                gr.Markdown("### 📂 Input Data")
+                file_input = gr.File(
+                    label="Upload Candidates",
+                    file_types=[".parquet", ".json", ".jsonl", ".gz"],
+                    elem_classes="file-upload",
+                )
+                gr.Markdown("*Supported formats: .parquet, .json, .jsonl, .jsonl.gz (up to ~100k candidates)*")
+                
+            with gr.Column(scale=1):
+                gr.Markdown("### ⚙️ Pipeline Configuration")
+                config_dropdown = gr.Dropdown(
+                    choices=list(_BUILTIN_CONFIGS.keys()),
+                    value=_DEFAULT_CONFIG_LABEL,
+                    label="Active Job Description (JD)",
+                    info="Select a pre-compiled JD config.",
+                )
+                with gr.Accordion("Advanced: Custom JD Config", open=False):
+                    custom_config_input = gr.File(
+                        label="Upload Custom Config (JSON)",
+                        file_types=[".json"],
+                        info="Overrides the dropdown selection."
+                    )
+        
+        with gr.Row():
+            run_btn = gr.Button("🚀 Start Ranking Pipeline", variant="primary", size="lg")
+            
+        gr.Markdown("---")
+            
+        with gr.Row():
+            with gr.Column(scale=3):
+                gr.Markdown("### 🏆 Top Ranked Candidates")
+                table_output = gr.DataFrame(
+                    label="Candidate Rankings",
+                    wrap=True,
+                    height=500,
+                )
+            with gr.Column(scale=1):
+                gr.Markdown("### 📝 Pipeline Execution Log")
+                log_output = gr.Textbox(
+                    label="Status & Timings",
+                    lines=15,
+                    max_lines=20,
+                    interactive=False,
+                    elem_classes="output-log",
+                    show_label=False
+                )
+                file_output = gr.File(label="📥 Download Submission CSV")
 
     run_btn.click(
         fn=run_ranking,
         inputs=[file_input, config_dropdown, custom_config_input],
         outputs=[table_output, file_output, log_output],
     )
-
-    gr.Markdown(
-        """
-        ---
-        **OmniRank-X** - Redrob Hackathon - 5-stage pipeline:
-        Polars loader -> Deterministic pruner -> ONNX semantic RRF ->
-        Trajectory scoring -> Behavioral composite -> Weighted fusion
-        """
-    )
-
 
 if __name__ == "__main__":
     demo.launch(server_name="0.0.0.0", server_port=7860)

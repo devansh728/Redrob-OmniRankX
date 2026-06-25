@@ -33,7 +33,16 @@ def stream_candidates(path):
 
 def serialize_row(row):
     flat_row = {"candidate_id": str(row.get("candidate_id", ""))}
-    career_list = row.get("career_history") or []
+    
+    career_val = row.get("career_history")
+    if isinstance(career_val, str):
+        try:
+            career_list = json.loads(career_val)
+        except:
+            career_list = []
+    else:
+        career_list = career_val or []
+
     career_text = " ".join([
         str(role.get("description", "")) for role in career_list 
         if isinstance(role, dict) and role.get("description")
@@ -42,12 +51,20 @@ def serialize_row(row):
     
     object_fields = ["profile", "redrob_signals"]
     for field in object_fields:
-        flat_row[field] = json.dumps(row.get(field) or {})
-        
+        val = row.get(field)
+        if isinstance(val, str):
+            flat_row[field] = val
+        else:
+            flat_row[field] = json.dumps(val or {})
+            
     array_fields = ["career_history", "education", "skills", "certifications", "languages"]
     for field in array_fields:
-        flat_row[field] = json.dumps(row.get(field) or [])
-        
+        val = row.get(field)
+        if isinstance(val, str):
+            flat_row[field] = val
+        else:
+            flat_row[field] = json.dumps(val or [])
+            
     return flat_row
 
 def load_all(path):
