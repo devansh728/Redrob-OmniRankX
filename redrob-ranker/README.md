@@ -1,15 +1,3 @@
----
-title: OmniRank-X
-emoji: 🎯
-colorFrom: indigo
-colorTo: purple
-sdk: gradio
-sdk_version: 4.21.0
-app_file: app.py
-pinned: true
-license: mit
----
-
 # OmniRank-X — Intelligent Candidate Discovery & Ranking
 
 **Redrob Hackathon Sandbox** · 5-stage CPU-only candidate ranking pipeline.
@@ -20,14 +8,14 @@ OmniRank-X reads a JSON/JSONL file of candidate profiles, scores each one agains
 
 ## Pipeline Stages
 
-| Stage | Module | What it does |
-|---|---|---|
-| 0 | `loader.py` | Streams JSONL / gzip JSONL into memory |
-| 1 | `pruner.py` | Drops honeypots, hard disqualifiers, services-only careers |
-| 2 | `semantic.py` | ONNX BGE-small embeddings + BM25 + skill alignment → RRF |
-| 3 | `trajectory.py` | Career arc scoring (tenure depth, hop penalty, long stints) |
-| 4 | `behavioral.py` | Recency, GitHub, notice period, salary fit, open-to-work |
-| 5 | `fusion.py` | Weighted sum → sort → top-100 → reasoning strings |
+| Stage | Module          | What it does                                                |
+| ----- | --------------- | ----------------------------------------------------------- |
+| 0     | `loader.py`     | Streams JSONL / gzip JSONL into memory                      |
+| 1     | `pruner.py`     | Drops honeypots, hard disqualifiers, services-only careers  |
+| 2     | `semantic.py`   | ONNX BGE-small embeddings + BM25 + skill alignment → RRF    |
+| 3     | `trajectory.py` | Career arc scoring (tenure depth, hop penalty, long stints) |
+| 4     | `behavioral.py` | Recency, GitHub, notice period, salary fit, open-to-work    |
+| 5     | `fusion.py`     | Weighted sum → sort → top-100 → reasoning strings           |
 
 ## How to use the sandbox
 
