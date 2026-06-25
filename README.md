@@ -4,7 +4,7 @@ emoji: 🎯
 colorFrom: indigo
 colorTo: purple
 sdk: gradio
-sdk_version: 4.21.0
+sdk_version: 4.44.1
 app_file: redrob-ranker/app.py
 python_version: "3.11"
 pinned: true
