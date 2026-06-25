@@ -44,6 +44,7 @@ Run with: python scripts/compile_jd.py
 import os
 import re
 import sys
+import time
 import json
 import argparse
 from datetime import datetime
@@ -224,6 +225,14 @@ def detect_verbatim_copy(parsed_output: dict, prompt_text: str, jd_chunk: str) -
 # Core inference call with anti-copying retry
 # ---------------------------------------------------------------------------
 
+def remove_nulls(d):
+    """Recursively remove None values from dicts/lists to trigger Pydantic defaults."""
+    if isinstance(d, dict):
+        return {k: remove_nulls(v) for k, v in d.items() if v is not None}
+    elif isinstance(d, list):
+        return [remove_nulls(v) for v in d if v is not None]
+    return d
+
 def execute_inference_pass(
     llm,
     system_prompt: str,
@@ -260,18 +269,31 @@ def execute_inference_pass(
             print("Execution halted by operator.")
             sys.exit(0)
 
+    chunk_start_time = time.time()
     response = llm.create_chat_completion(
         messages=messages,
         temperature=0.0,
         max_tokens=1024,
     )
+    chunk_elapsed = time.time() - chunk_start_time
+    print(f"[ORCHESTRATOR] {execution_label} completed in {chunk_elapsed:.2f} seconds.")
 
     raw_response_output = response["choices"][0]["message"]["content"]
     repaired_json_dict = json_repair.loads(raw_response_output)
 
+    if isinstance(repaired_json_dict, list):
+        if len(repaired_json_dict) == 1 and isinstance(repaired_json_dict[0], dict):
+            repaired_json_dict = repaired_json_dict[0]
+        elif len(repaired_json_dict) == 0:
+            repaired_json_dict = {}
+
+    if not repaired_json_dict:
+        repaired_json_dict = {}
+
     if not isinstance(repaired_json_dict, dict):
         raise ValueError(f"SLM output failed JSON formatting constraint: {raw_response_output}")
 
+    repaired_json_dict = remove_nulls(repaired_json_dict)
     validated = schema_class.model_validate(repaired_json_dict)
 
     full_prompt_text = system_prompt + "\n" + user_content
@@ -383,7 +405,14 @@ def _assert_no_embedded_examples_in_placeholders(prompt_text: str, prompt_label:
         )
 
 
-def build_pass1_prompt(jd_chunk: str, chunk_label: str) -> tuple:
+def build_pass1_prompt(jd_chunk: str, chunk_label: str, critical_tokens: list = None) -> tuple:
+    chunk_tokens = [t for t in critical_tokens if t.lower() in jd_chunk.lower()] if critical_tokens else []
+    warning_text = (
+        f"CRITICAL: You MUST include the following words in your output since they are present in this section: {chunk_tokens}. Do not ignore them.\n"
+        if chunk_tokens else
+        "CRITICAL: Ensure that every proper noun, company name, city, and technology abbreviation is captured in your output. Do not ignore them.\n"
+    )
+
     system_prompt = (
         "You are a recruitment structural analyst. You extract the persona, "
         "business intent, and evidence requirements from ONE section of a job "
@@ -422,12 +451,21 @@ def build_pass1_prompt(jd_chunk: str, chunk_label: str) -> tuple:
         'requirements this section frames as NICE-TO-HAVE, not mandatory>]\n'
         "}\n\n"
         "If this section contains none of the above, return empty lists/strings "
-        "for every field. Output ONLY valid JSON."
+        "for every field. "
+        + warning_text +
+        "Output ONLY valid JSON."
     )
     return system_prompt, user_content
 
 
-def build_pass2_prompt(jd_chunk: str, chunk_label: str) -> tuple:
+def build_pass2_prompt(jd_chunk: str, chunk_label: str, critical_tokens: list = None) -> tuple:
+    chunk_tokens = [t for t in critical_tokens if t.lower() in jd_chunk.lower()] if critical_tokens else []
+    warning_text = (
+        f"CRITICAL: You MUST include the following words in your Catch-All bucket (additional_important_keywords) since they are present in this section: {chunk_tokens}. Do not ignore them.\n"
+        if chunk_tokens else
+        "CRITICAL: Ensure that every proper noun, company name, city, and technology abbreviation is captured in your output. Do not ignore them.\n"
+    )
+
     system_prompt = (
         "You are a hiring-constraints analyst. You extract hard numeric and "
         "categorical constraints from ONE section of a job description at a "
@@ -558,8 +596,10 @@ def build_pass2_prompt(jd_chunk: str, chunk_label: str) -> tuple:
         "    }\n"
         "  ],\n"
         '  "bounded_concept_expansions": ["<a skill/concept term this section '
-        'uses or implies, up to 15 total>"]\n'
+        'uses or implies, up to 15 total>"],\n'
+        '  "additional_important_keywords": ["<If you see any specific company names, locations, or technical concepts that do not fit perfectly into the categories above, you MUST list them here, else empty list>"]\n'
         "}\n\n"
+        + warning_text +
         "Output ONLY valid JSON."
     )
     return system_prompt, user_content
@@ -684,11 +724,11 @@ def verify_named_entities_gate(raw_text: str, config_data: dict) -> List[str]:
 # Pass orchestration — run each pass once per chunk, merge results
 # ---------------------------------------------------------------------------
 
-def run_pass1_over_chunks(llm, chunks: List[str], interactive: bool) -> Pass1Schema:
+def run_pass1_over_chunks(llm, chunks: list, interactive: bool, critical_tokens: list = None) -> Pass1Schema:
     partials = []
     for i, chunk in enumerate(chunks):
         label = f"chunk_{i+1}_of_{len(chunks)}"
-        system_prompt, user_content = build_pass1_prompt(chunk, label)
+        system_prompt, user_content = build_pass1_prompt(chunk, label, critical_tokens)
         result = execute_inference_pass(
             llm, system_prompt, user_content, Pass1Schema,
             f"Pass 1 - {label}", jd_chunk_for_copy_check=chunk,
@@ -698,11 +738,11 @@ def run_pass1_over_chunks(llm, chunks: List[str], interactive: bool) -> Pass1Sch
     return merge_pass1(partials)
 
 
-def run_pass2_over_chunks(llm, chunks: List[str], interactive: bool) -> Pass2Schema:
+def run_pass2_over_chunks(llm, chunks: list, interactive: bool, critical_tokens: list = None) -> Pass2Schema:
     partials = []
     for i, chunk in enumerate(chunks):
         label = f"chunk_{i+1}_of_{len(chunks)}"
-        system_prompt, user_content = build_pass2_prompt(chunk, label)
+        system_prompt, user_content = build_pass2_prompt(chunk, label, critical_tokens)
         result = execute_inference_pass(
             llm, system_prompt, user_content, Pass2Schema,
             f"Pass 2 - {label}", jd_chunk_for_copy_check=chunk,
@@ -731,6 +771,7 @@ def run_pass3_over_chunks(llm, chunks: List[str], interactive: bool) -> Pass3Sch
 # ---------------------------------------------------------------------------
 
 def main():
+    total_start_time = time.time()
     parser = argparse.ArgumentParser()
     parser.add_argument("--jd-path", default="../India_runs_data_and_ai_challenge/job_description.docx")
     parser.add_argument("--output-path", default="config/generated_config_new_2.json")
@@ -743,6 +784,7 @@ def main():
     model_abs_path = os.path.abspath(os.path.join(project_root, args.model_path))
 
     full_jd_text = extract_raw_text_from_file(jd_abs_path)
+    critical_tokens = extract_critical_tokens(full_jd_text)
     chunks = segment_jd_text(full_jd_text)
     print(f"[ORCHESTRATOR] JD split into {len(chunks)} chunks "
           f"(~{CHUNK_CHAR_LIMIT} chars each) — each chunk gets its own inference call.")
@@ -757,17 +799,16 @@ def main():
         print("[ORCHESTRATOR] Prompt safety self-check passed for all three passes.")
 
     llm = load_slm(model_abs_path)
-    interactive = not args.no_confirm
+    interactive = False  # Automated, no prompt
 
-    pass1 = run_pass1_over_chunks(llm, chunks, interactive)
-    pass2 = run_pass2_over_chunks(llm, chunks, interactive)
+    pass1 = run_pass1_over_chunks(llm, chunks, interactive, critical_tokens)
+    pass2 = run_pass2_over_chunks(llm, chunks, interactive, critical_tokens)
     pass3 = run_pass3_over_chunks(llm, chunks, interactive)
 
     grounded_weights = calculate_grounded_weights(pass1, pass2, pass3)
 
     master_config_output = {
         "meta": {
-            "compiled_timestamp": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
             "jd_source_file": os.path.basename(jd_abs_path),
             "ambiguity_damping_factor": round(pass3.jd_ambiguity_score / 20.0, 4),
             "chunk_count": len(chunks),
@@ -804,6 +845,9 @@ def main():
     print(f"  Tier-1 evidence items: {len(pass1.tier1_mandatory_evidence)}")
     print(f"  Tier-2 evidence items: {len(pass1.tier2_preferred_evidence)}")
     print(f"  Fusion weights       : {grounded_weights}")
+    
+    total_elapsed = time.time() - total_start_time
+    print(f"  Total time taken     : {total_elapsed:.2f} seconds")
 
 
 if __name__ == "__main__":

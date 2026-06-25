@@ -261,7 +261,7 @@ def load_runtime_config(config_path: str | None = None) -> RuntimeConfig:
     """
     if config_path is None:
         proj_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-        config_path = os.path.join(proj_root, "config", "generated_config.json")
+        config_path = os.path.join(proj_root, "config", "generated_config_new_2_FAILED_DEBUG_2.json")
 
     if os.path.exists(config_path):
         try:

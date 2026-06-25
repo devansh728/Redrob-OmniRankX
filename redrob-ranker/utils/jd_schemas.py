@@ -102,7 +102,7 @@ class QuantifierType(str, Enum):
 
 
 class HardDisqualifier(BaseModel):
-    condition_name: str
+    condition_name: str = ""
     rule_type: RuleType = RuleType.UNRESOLVED
     applies_to: QuantifierType = QuantifierType.NOT_APPLICABLE
     primary_keywords: List[str] = Field(default_factory=list)
@@ -117,9 +117,25 @@ class HardDisqualifier(BaseModel):
     rejection_value: str = ""
     traceability: TraceableQuote = Field(default_factory=TraceableQuote)
 
+    @field_validator("rule_type", mode="before")
+    @classmethod
+    def fallback_rule_type(cls, v):
+        try:
+            return RuleType(v)
+        except ValueError:
+            return RuleType.UNRESOLVED
+
+    @field_validator("applies_to", mode="before")
+    @classmethod
+    def fallback_applies_to(cls, v):
+        try:
+            return QuantifierType(v)
+        except ValueError:
+            return QuantifierType.NOT_APPLICABLE
+
 
 class SoftDisqualifier(BaseModel):
-    condition_name: str
+    condition_name: str = ""
     rule_type: RuleType = RuleType.UNRESOLVED
     applies_to: QuantifierType = QuantifierType.NOT_APPLICABLE
     primary_keywords: List[str] = Field(default_factory=list)
@@ -135,18 +151,34 @@ class SoftDisqualifier(BaseModel):
     target_field_path: str = ""
     traceability: TraceableQuote = Field(default_factory=TraceableQuote)
 
+    @field_validator("rule_type", "escape_rule_type", mode="before")
+    @classmethod
+    def fallback_rule_type(cls, v):
+        try:
+            return RuleType(v)
+        except ValueError:
+            return RuleType.UNRESOLVED
+
+    @field_validator("applies_to", mode="before")
+    @classmethod
+    def fallback_applies_to(cls, v):
+        try:
+            return QuantifierType(v)
+        except ValueError:
+            return QuantifierType.NOT_APPLICABLE
+
 
 class PositiveEvidenceRequirement(BaseModel):
-    requirement_name: str
-    evidence_proof_expectations: List[str]
-    is_mandatory_tier1: bool
+    requirement_name: str = ""
+    evidence_proof_expectations: List[str] = Field(default_factory=list)
+    is_mandatory_tier1: bool = False
     matching_keywords: List[str] = Field(default_factory=list)
     traceability: TraceableQuote = Field(default_factory=TraceableQuote)
 
 
 class Pass1Schema(BaseModel):
-    business_intent: str
-    primary_persona: str
+    business_intent: str = ""
+    primary_persona: str = ""
     anti_personas: List[str] = Field(default_factory=list)
     tier1_mandatory_evidence: List[PositiveEvidenceRequirement] = Field(default_factory=list)
     tier2_preferred_evidence: List[PositiveEvidenceRequirement] = Field(default_factory=list)
@@ -162,6 +194,7 @@ class Pass2Schema(BaseModel):
     hard_disqualifiers: List[HardDisqualifier] = Field(default_factory=list)
     soft_disqualifiers: List[SoftDisqualifier] = Field(default_factory=list)
     bounded_concept_expansions: List[str] = Field(default_factory=list)
+    additional_important_keywords: List[str] = Field(default_factory=list)
 
     @field_validator("bounded_concept_expansions")
     @classmethod
@@ -277,6 +310,10 @@ def merge_pass2(partials: List[Pass2Schema]) -> Pass2Schema:
         [e for p in partials for e in p.bounded_concept_expansions],
         key_fn=lambda e: e.strip().lower(),
     )[:15]
+    additional_kws = _dedupe_by_key(
+        [k for p in partials for k in p.additional_important_keywords],
+        key_fn=lambda k: k.strip().lower(),
+    )
 
     return Pass2Schema(
         min_years_experience=pick_min_years(partials),
@@ -288,6 +325,7 @@ def merge_pass2(partials: List[Pass2Schema]) -> Pass2Schema:
         hard_disqualifiers=hard,
         soft_disqualifiers=soft,
         bounded_concept_expansions=expansions,
+        additional_important_keywords=additional_kws,
     )
 
 
