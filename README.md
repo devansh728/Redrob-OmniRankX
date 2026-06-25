@@ -6,6 +6,7 @@ colorTo: purple
 sdk: gradio
 sdk_version: 4.21.0
 app_file: redrob-ranker/app.py
+python_version: "3.11"
 pinned: true
 license: mit
 ---
